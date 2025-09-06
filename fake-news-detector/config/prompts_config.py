@@ -1,19 +1,11 @@
+# config/prompts_config.py
+
 """
-Enhanced Centralized Prompt Template Management (v2.3.0)
+Enhanced Centralized Prompt Template Management
 
 This module provides centralized management of all prompt templates
 used by the AI-powered agents in the fake news detection system.
-
-Prompts have been professionally upgraded to industry standards for Large
-Language Models, incorporating techniques like:
-- **Persona-driven roles**: Assigning a specific persona (e.g., 'Veritas') for consistency.
-- **Structured output formats**: Using XML-style tags for predictable, parsable results.
-- **Negative constraints**: Clearly defining what the model should NOT do.
-- **Chain-of-thought guidance**: Instructing the model on its reasoning process.
-- **Self-correction checks**: Asking the model to review its own output before finalizing.
-
-These enhancements ensure higher quality, more consistent, and more reliable outputs
-from the AI agents without changing the module's public-facing API.
+Enhanced to fix formatting, credibility scoring, URL specificity, and source recommendations.
 """
 
 from typing import Dict, Any, Optional, List
@@ -24,10 +16,10 @@ import json
 @dataclass
 class PromptsConfig:
     """
-    Enhanced Centralized Prompt Template Management.
+    Enhanced Centralized Prompt Template Management
     
-    This class manages all prompt templates used by AI agents. The prompts
-    are optimized for professional, consistent, and high-fidelity output from LLMs.
+    This class manages all prompt templates used by AI agents,
+    with enhanced formatting, specific URL requests, and better scoring.
     """
     
     # Agent prompt dictionaries
@@ -38,10 +30,10 @@ class PromptsConfig:
     evidence_evaluator_prompts: Dict[str, str] = field(default_factory=dict)
     
     # Enhanced prompt versioning
-    prompt_version: str = "2.3.0"  # Updated version for enhanced prompts
+    prompt_version: str = "2.1.0"
     
     def __post_init__(self):
-        """Initialize all enhanced prompt templates."""
+        """Initialize all enhanced prompt templates"""
         if not self.llm_explanation_prompts:
             self.llm_explanation_prompts = self._get_enhanced_llm_explanation_prompts()
         if not self.credible_source_prompts:
@@ -52,614 +44,1016 @@ class PromptsConfig:
             self.context_analyzer_prompts = self._get_context_analyzer_prompts()
         if not self.evidence_evaluator_prompts:
             self.evidence_evaluator_prompts = self._get_evidence_evaluator_prompts()
-
+    
     def _get_enhanced_llm_explanation_prompts(self) -> Dict[str, str]:
-        """
-        Enhanced LLM explanation prompts with persona, structured formatting,
-        and clear instructions for professional-grade analysis reports.
-        """
+        """Enhanced LLM explanation prompts with proper Markdown formatting"""
         return {
             "main_explanation": """
-You are 'Veritas', an AI fact-checking analyst. Your task is to produce a clear, objective, and impeccably formatted Markdown report. Your output must strictly follow the requested structure. Do not include any conversational preamble or summary.
+You are a professional fact-checker creating a clear, well-structured analysis report.
 
-<article_data>
-  <content>{article_text}</content>
-  <classification>{prediction}</classification>
-  <confidence>{confidence:.2%}</confidence>
-  <source>{source}</source>
-  <date>{date}</date>
-  <subject>{subject}</subject>
-</article_data>
+**ARTICLE DETAILS:**
+- **Content**: {article_text}
+- **Classification**: {prediction}
+- **Confidence**: {confidence:.2%}
+- **Source**: {source}
+- **Date**: {date}
+- **Subject**: {subject}
 
-Produce the analysis report based on the provided data.
+Create a comprehensive analysis using proper **Markdown formatting**:
 
-## Executive Summary
-Provide a 2-3 sentence summary explaining the final classification of '{prediction}'. State the conclusion directly and justify it with the most critical factor (e.g., source reliability, evidence quality, logical fallacies).
+## Classification Summary
 
-## Core Evidence Analysis
-List up to three key pieces of evidence or quotes from the article. For each, provide a brief, neutral analysis of its significance.
-- **Evidence 1**: "*Quote from article*"
-  - **Analysis**: Explain what this evidence demonstrates or claims.
-- **Evidence 2**: "*Quote from article*"
-  - **Analysis**: Explain its role in the article's narrative.
-- **Evidence 3**: "*Quote from article*"
-  - **Analysis**: Note its verifiability or potential for misinterpretation.
+Write 2-3 sentences explaining why this article is classified as **{prediction}**. Be clear and direct.
 
-## Credibility Assessment
-Evaluate the key factors influencing the article's credibility. Use bullet points.
+## Key Evidence Analysis
 
-### ✅ Strengths (Factors supporting credibility)
-- [List a specific strength, e.g., "Cites primary-source documents."]
-- [List another specific strength, e.g., "Quotes multiple, named experts from relevant fields."]
+### Supporting Evidence
 
-### ⚠️ Weaknesses (Factors undermining credibility)
-- [List a specific weakness, e.g., "Relies heavily on anonymous sources."]
-- [List another specific weakness, e.g., "Uses emotionally charged language to frame the issue."]
+- **Evidence Point 1**: *Quote from article* → Explain significance
+- **Evidence Point 2**: *Quote from article* → Explain significance
+- **Evidence Point 3**: *Quote from article* → Explain significance
 
-## Confidence Rationale
-Explain the reasoning behind the {confidence:.2%} confidence score.
-- **Factors Increasing Confidence**: What elements make the classification straightforward? (e.g., "The source has a documented history of producing fabricated content.")
-- **Factors Reducing Confidence**: What elements introduce uncertainty? (e.g., "The article blends verifiable facts with unsubstantiated claims, making a simple classification difficult.")
+### Source Quality Assessment
+
+- **Primary Sources**: List and evaluate quality
+- **Expert Attribution**: Assess quoted authorities
+- **Verification Potential**: How easily can claims be checked
+
+## Credibility Factors
+
+### ✅ Strengths
+
+- Factor 1 that enhances credibility
+- Factor 2 that supports authenticity
+- Factor 3 that indicates reliability
+
+### ⚠️ Concerns (if any)
+
+- Issue 1 that reduces confidence
+- Issue 2 that raises questions
+- Issue 3 that requires verification
+
+## Confidence Level Explanation
+
+**Why {confidence:.2%} confidence?**
+
+- **High certainty factors**: What made classification clear
+- **Uncertainty factors**: What elements create doubt
+- **Verification recommendation**: Whether readers need additional fact-checking
 
 ## Reader Guidance
-Provide a clear, actionable "bottom line" for a reader.
-- **Recommendation**: State clearly how a reader should approach this information (e.g., "Treat with extreme skepticism," "Consider it a valid perspective but seek corroboration," "Trust as a reliable report.").
+
+**Bottom Line**: Clear recommendation for how readers should treat this information.
+
+**Format your entire response using proper Markdown with headers (##, ###), bullet points (-), bold text (**bold**), and italics (*italic*) for maximum readability.**
 """,
+
             "detailed_analysis": """
-You are 'Forenso', a forensic media analyst AI. Your task is to create a detailed, structured report using the specified Markdown format. Your analysis must be objective and evidence-based.
+You are conducting a comprehensive forensic media analysis. Create a detailed Markdown report.
 
 ## FORENSIC ANALYSIS REPORT
 
-**Article Content**: {article_text}
-**Initial Classification**: {prediction} (Confidence: {confidence:.2%})
-**Metadata**: {metadata}
+**Article Under Investigation**: {article_text}
+**Classification**: {prediction} (Confidence: {confidence:.2%})
+**Analysis Date**: {metadata}
 
-## Phase 1: Claim Deconstruction & Analysis
-Deconstruct the article into its core, verifiable claims.
+## Phase 1: Claim Decomposition
 
 ### Primary Claims Identified
-1.  **Claim**: [State the main assertion of the article.]
-    - **Type**: [Statistical, Causal, Attributive, etc.]
-    - **Verifiability Score**: [Score out of 10, where 10 is easily verifiable with public data.]
-2.  **Claim**: [State a major supporting assertion.]
-    - **Type**: [Statistical, Causal, Attributive, etc.]
-    - **Verifiability Score**: [Score out of 10.]
 
-## Phase 2: Source & Language Assessment
+1. **Claim 1**: [Extract main assertion]
+   - **Verification Level**: Easy/Moderate/Difficult
+   - **Impact**: High/Medium/Low
 
-### Source Evaluation
-- **Primary Sources Cited**: [List any primary sources, e.g., 'Internal government report', 'Peer-reviewed study'. If none, state 'None identified'.]
-- **Expert Attribution**: [Assess the credibility of quoted experts. Are they named? Are they experts in the relevant field? e.g., 'Quotes Dr. Jane Smith, a credited virologist from a reputable university.']
-- **Anonymity**: [Note the use of anonymous sources and its impact, e.g., 'High reliance on "an unnamed official," which weakens credibility.']
+2. **Claim 2**: [Extract supporting assertion]
+   - **Verification Level**: Easy/Moderate/Difficult
+   - **Impact**: High/Medium/Low
 
-### Linguistic & Rhetorical Analysis
-- **Tone**: [Objective/Neutral, Persuasive, Alarmist, Satirical, etc.]
-- **Logical Fallacies**: [Identify any fallacies present, e.g., 'Ad Hominem', 'Straw Man', 'Appeal to Emotion'. If none, state 'No obvious logical fallacies detected'.]
-- **Loaded Language**: [Provide examples of words or phrases designed to evoke emotion rather than convey information, e.g., 'vicious', 'scandal', 'miracle cure'.]
+### Supporting Evidence Review
 
-## Final Assessment & Recommendation
-Synthesize the findings into a final assessment.
+- **Statistical Claims**: Numbers and percentages presented
+- **Attribution Claims**: Who said what and when
+- **Temporal Claims**: Dates, timelines, sequences
 
-- **Overall Credibility Score**: {confidence:.0}/100
-- **Primary Risk Factor**: [Identify the single biggest risk to the article's credibility, e.g., 'Source Bias', 'Lack of Verifiable Evidence', 'Manipulative Language'.]
-- **Recommendation**: [Provide a clear action for the reader: 'Dismiss as unreliable', 'Verify with primary sources before accepting', or 'Accept as credible'.]
+## Phase 2: Source Attribution Analysis
+
+### Source Quality Matrix
+
+| Source Type | Count | Quality | Accessibility |
+|-------------|--------|---------|---------------|
+| Official Documents | X | High/Med/Low | Public/Restricted |
+| Expert Quotes | X | High/Med/Low | Verifiable/Unclear |
+| News Reports | X | High/Med/Low | Available/Missing |
+
+### Attribution Assessment
+
+- **Direct Sources**: First-hand information providers
+- **Secondary Sources**: Reporting based on other sources
+- **Anonymous Sources**: Unidentified information providers
+
+## Phase 3: Language & Presentation Analysis
+
+### Writing Quality Indicators
+
+- **Professional Standards**: ✅/❌ Meets journalistic standards
+- **Technical Accuracy**: ✅/❌ Appropriate detail level
+- **Emotional Language**: ✅/❌ Neutral vs. manipulative tone
+- **Logical Flow**: ✅/❌ Coherent argument structure
+
+## Phase 4: Contextual Verification
+
+### Fact-Checking Results
+
+- **✅ Confirmed Facts**: Information verified through reliable sources
+- **❌ Contradicted Facts**: Information that conflicts with established facts
+- **❓ Unverified Claims**: Information that cannot be independently confirmed
+
+### Plausibility Assessment
+
+- **Timeline Consistency**: Do dates and sequences align?
+- **Geographic Logic**: Do locations and distances make sense?
+- **Institutional Knowledge**: Do claims match how organizations actually work?
+
+## Final Forensic Assessment
+
+**Overall Credibility Score**: {confidence:.0%}/100%
+
+**Evidence Quality**: High/Medium/Low
+**Source Reliability**: High/Medium/Low
+**Logical Consistency**: High/Medium/Low
+
+**Recommendation**: [Clear action for readers - trust, verify, or dismiss]
+
+**Priority for Human Review**: High/Medium/Low
+
+Use proper Markdown formatting throughout your forensic analysis.
 """,
+
             "confidence_analysis": """
-You are an AI quality assurance analyst. Your task is to review an automated classification and its confidence score, then provide a structured recommendation for human review.
+Analyze the appropriateness of the confidence level using structured Markdown.
 
-<input>
-  <classification>{prediction}</classification>
-  <confidence>{confidence:.2%}</confidence>
-  <content>{article_text}</content>
-</input>
+## CONFIDENCE LEVEL ANALYSIS
 
-<output>
-## Confidence Score Review
+### Current AI Assessment
 
-### AI Assessment Details
-- **Classification**: {prediction}
-- **Confidence Score**: {confidence:.2%}
+- **Article Classification**: {prediction}
+- **Assigned Confidence**: {confidence:.2%}
+- **Article Content**: {article_text}
 
-### Justification for Score
-Based on the analysis, list factors that support the assigned confidence level.
-- **Supporting Factor 1**: [e.g., "Article originates from a source with a consistent track record of high-quality journalism."]
-- **Supporting Factor 2**: [e.g., "Claims are supported by links to peer-reviewed scientific studies."]
+## Confidence Appropriateness Review
 
-### Factors of Uncertainty
-List elements within the article that introduce ambiguity or could challenge the confidence score.
-- **Uncertainty 1**: [e.g., "Article mixes factual statements with highly speculative, opinion-based conclusions."]
-- **Uncertainty 2**: [e.g., "A key statistical claim lacks a direct source link, requiring external verification."]
+### ✅ Factors Supporting Current Confidence
 
-## Recommendation for Human Review
+1. **Factor 1**: Specific reason the confidence level is justified
+2. **Factor 2**: Additional evidence supporting the confidence
+3. **Factor 3**: Pattern recognition that validates the assessment
 
-- **Priority Level**: [🔴 HIGH / 🟡 MEDIUM / 🟢 LOW]
-- **Rationale**: [Provide a 1-2 sentence explanation for the priority level. e.g., "HIGH priority due to the article making a serious medical claim that, if false, could have public health implications."]
-- **Key Areas for Human Focus**:
-  1. **Claim to Verify**: [Specify the most critical claim that a human reviewer should investigate first.]
-  2. **Source to Scrutinize**: [Point to a specific source or expert mentioned that requires deeper vetting.]
-  3. **Potential Bias**: [Highlight the type of bias (e.g., political, confirmation) a human should be aware of while reviewing.]
-</output>
+### ⚠️ Uncertainty Indicators Present
+
+1. **Ambiguous Elements**: Unclear or contradictory information
+2. **Mixed Signals**: Both credible and questionable elements
+3. **Knowledge Gaps**: Information that's missing or incomplete
+
+### 🎯 Edge Case Assessment
+
+- **Content Complexity**: Simple/Moderate/Complex
+- **Novel Elements**: Standard reporting vs. unusual claims
+- **Borderline Factors**: Elements that could swing classification
+
+## Human Review Recommendation
+
+**Priority Level**: 🔴 HIGH / 🟡 MEDIUM / 🟢 LOW
+
+**Rationale**: Explain why human review is or isn't necessary
+
+**Focus Areas for Human Reviewers**:
+- Specific claims that need expert evaluation
+- Sources that require additional verification
+- Technical details that need specialist knowledge
+
+## Confidence Calibration
+
+**Recommended Confidence**: [X]%
+
+**Adjustment Rationale**: Why confidence should remain same or change
+
+**Reader Advisory**: How confident the public should be in this assessment
+
+Format your analysis using clear Markdown headers and structured lists.
 """
         }
-
+    
     def _get_enhanced_credible_source_prompts(self) -> Dict[str, str]:
-        """
-        Prompts focused on sourcing, with strict negative constraints to prevent
-        generic, non-actionable homepage URLs. Demands specific, article-level links.
-        """
+        """Enhanced credible source prompts requesting specific, actionable URLs"""
         return {
             "source_recommendations": """
-You are a specialist fact-checking research assistant. Your sole purpose is to find specific, verifiable, and directly relevant sources to fact-check an article's claims. Generic, top-level domains are strictly forbidden.
+You are a fact-checking specialist providing SPECIFIC, ACTIONABLE source recommendations for this exact article.
 
-<article_info>
-  <topic>{topic_summary}</topic>
-  <claims>{extracted_claims}</claims>
-  <domain>{news_domain}</domain>
-  <source>{original_source}</source>
-</article_info>
+**ARTICLE TOPIC**: {topic_summary}
+**KEY CLAIMS TO VERIFY**: {extracted_claims}
+**CLASSIFICATION**: {prediction}
+**NEWS DOMAIN**: {news_domain}
+**ORIGINAL SOURCE**: {original_source}
 
-### CRITICAL INSTRUCTION: URL Specificity ###
-You MUST provide complete, deep-link URLs to specific articles, reports, or data pages that directly address a claim.
-- ❌ **FORBIDDEN**: `http://www.organization.gov`
-- ✅ **REQUIRED**: `http://www.organization.gov/data/reports/specific-report-on-topic.pdf`
+## SPECIFIC VERIFICATION STRATEGY
 
-<output>
-## Verification Sources
-Provide up to 3 high-quality verification sources in the following format.
+Based on the exact claims in this article, provide these specific resources:
 
-<source>
-  <claim_verified>"[Quote the exact claim from the article that this source verifies or refutes.]"</claim_verified>
-  <url>[Provide the complete, specific URL. Must not be a homepage.]</url>
-  <analysis>[In one sentence, explain precisely what this source confirms or contradicts.]</analysis>
-  <type>[Primary Source Document, Peer-Reviewed Study, Reputable News Report, Official Data, Expert Analysis]</type>
-  <confidence>[High/Medium/Low] - How confident are you that this source can resolve the claim?</confidence>
-</source>
+### CLAIM-SPECIFIC SOURCES (Not Generic Institutions)
 
-<source>
-  <claim_verified>"[Quote another exact claim.]"</claim_verified>
-  <url>[Provide the complete, specific URL.]</url>
-  <analysis>[In one sentence, explain what this source proves.]</analysis>
-  <type>[Primary Source Document, Peer-Reviewed Study, Reputable News Report, Official Data, Expert Analysis]</type>
-  <confidence>[High/Medium/Low]</confidence>
-</source>
+**For Each Major Claim in the Article**:
 
-### Self-Correction Step ###
-Before concluding, review your generated URLs. Do they lead to a specific page addressing the claim? If not, replace it.
-</output>
+1. **Statistical Claims** (if present):
+   - Direct link to: Official statistics/data pages
+   - Example: https://data.gov/dataset/specific-topic NOT https://data.gov
+   - Search: "exact statistic" + "official source"
+
+2. **Expert Quotes** (if present):
+   - Direct link to: Expert's original research/statements  
+   - Example: https://university.edu/research/specific-study NOT https://university.edu
+   - Search: "expert name" + "quoted topic" + original publication
+
+3. **Event Claims** (if present):
+   - Direct link to: Contemporary news coverage of the event
+   - Example: https://reuters.com/article/specific-event-2024 NOT https://reuters.com
+   - Search: "event name" + "date" + "reuters OR ap news"
+
+4. **Policy/Legal Claims** (if present):
+   - Direct link to: Actual policy documents/legal texts
+   - Example: https://congress.gov/bill/specific-bill NOT https://congress.gov  
+   - Search: "policy name" OR "bill number" + official government site
+
+5. **Scientific Claims** (if present):
+   - Direct link to: Peer-reviewed papers or official studies
+   - Example: https://pubmed.ncbi.nlm.nih.gov/specific-study-id NOT https://pubmed.ncbi.nlm.nih.gov
+   - Search: "study title" OR "doi number" + pubmed
+
+### FACT-CHECKING CROSS-REFERENCE
+Check if similar claims have been fact-checked:
+- Search: "claim keywords" + site:snopes.com
+- Search: "claim keywords" + site:factcheck.org  
+- Search: "claim keywords" + site:politifact.com
+
+## OUTPUT FORMAT:
+For each source, provide:
+- **Claim Being Verified**: [Exact quote from article]
+- **Specific URL**: [Direct link to verification page]
+- **What to Look For**: [Exactly what information confirms/refutes the claim]
+- **Confidence**: [How certain this source can verify the claim]
+
+**CRITICAL**: Every URL must be SPECIFIC to the article's claims, not generic institutional homepages.
 """,
+
             "reliability_assessment": """
-You are a source reliability analyst. Your task is to conduct a structured audit of a given source and provide a quantitative assessment.
+Conduct a comprehensive source reliability assessment with specific scoring.
 
-<source_info>
-  <name>{source_name}</name>
-  <content_sample>{source_content}</content_sample>
-  <domain_context>{news_domain}</domain_context>
-</source_info>
+## SOURCE RELIABILITY ANALYSIS
 
-<output>
-## Source Reliability Audit: {source_name}
+**Source Being Evaluated**: {source_name}
+**Source Content**: {source_content}
+**Domain Context**: {news_domain}
+**Article Context**: {context}
 
-<assessment_category>
-  <category>Authority & Expertise</category>
-  <score>[Score from 1-10]</score>
-  <rationale>[Justify the score. Does the source have recognized expertise and credentials in this domain? Provide evidence.]</rationale>
-</assessment_category>
+## RELIABILITY SCORING FRAMEWORK
 
-<assessment_category>
-  <category>Transparency & Accountability</category>
-  <score>[Score from 1-10]</score>
-  <rationale>[Justify the score. Does the source have a clear corrections policy? Is funding transparent? Are authors identified?]</rationale>
-</assessment_category>
+### 1. Authority & Expertise Assessment
 
-<assessment_category>
-  <category>Bias & Neutrality</category>
-  <score>[Score from 1-10]</score>
-  <rationale>[Justify the score. Does the source exhibit strong political, commercial, or ideological bias? Is the language neutral or loaded?]</rationale>
-</assessment_category>
+**Score: ___/10**
 
-<assessment_category>
-  <category>Trustworthiness & Track Record</category>
-  <score>[Score from 1-10]</score>
-  <rationale>[Justify the score. Does the source have a history of accurate reporting? Is it cited by other reliable sources?]</rationale>
-</assessment_category>
+#### Evaluation Criteria:
+- **Relevant Credentials**: ✅/❌ Appropriate qualifications for topic
+- **Professional Standing**: ✅/❌ Recognized expertise in field
+- **Track Record**: ✅/❌ History of accurate reporting/analysis
+- **Institutional Backing**: ✅/❌ Credible organizational support
+- **Peer Recognition**: ✅/❌ Acknowledged by other experts
 
-## Final Assessment
+**Specific Examples**: [List concrete evidence of authority]
 
-<total_score>[Sum of the scores above, out of 40]</total_score>
-<reliability_tier>[Extremely Reliable (35-40), Highly Reliable (30-34), Moderately Reliable (20-29), Low Reliability (10-19), Unreliable (0-9)]</reliability_tier>
-<usage_guidance>[Provide a one-sentence recommendation. e.g., "This source can be trusted for primary reporting but its opinion pieces should be cross-referenced."]</usage_guidance>
-</output>
+### 2. Transparency & Accountability
+
+**Score: ___/10**
+
+#### Evaluation Criteria:
+- **Methodology Disclosure**: ✅/❌ Clear about how information gathered
+- **Source Attribution**: ✅/❌ Properly cites original sources
+- **Funding Transparency**: ✅/❌ Open about financial backing
+- **Correction Policy**: ✅/❌ Acknowledges and fixes errors
+- **Contact Information**: ✅/❌ Accessible for questions
+
+**Transparency Evidence**: [Specific examples of openness]
+
+### 3. Independence & Bias Assessment
+
+**Score: ___/10**
+
+#### Evaluation Criteria:
+- **Financial Independence**: ✅/❌ Diverse, disclosed funding
+- **Editorial Independence**: ✅/❌ Free from external pressure
+- **Political Neutrality**: ✅/❌ Balanced treatment of issues
+- **Commercial Conflicts**: ✅/❌ No undisclosed business interests
+- **Ideological Balance**: ✅/❌ Acknowledges worldview limitations
+
+**Independence Indicators**: [Evidence of unbiased reporting]
+
+### 4. Consistency & Reliability
+
+**Score: ___/10**
+
+#### Evaluation Criteria:
+- **Internal Consistency**: ✅/❌ Coherent within current content
+- **External Consistency**: ✅/❌ Aligns with other credible sources
+- **Temporal Consistency**: ✅/❌ Reliable reporting over time
+- **Factual Accuracy**: ✅/❌ Previous claims have been verified
+- **Editorial Standards**: ✅/❌ Evidence of quality control
+
+**Consistency Examples**: [Track record evidence]
+
+## OVERALL RELIABILITY ASSESSMENT
+
+**Total Score: ___/40 (Average: ___/10)**
+
+### Quality Classification:
+- **9-10/10**: Extremely Reliable - Trust with high confidence
+- **7-8/10**: Highly Reliable - Trust with minor verification
+- **5-6/10**: Moderately Reliable - Verify through additional sources
+- **3-4/10**: Low Reliability - Use only with significant caveats
+- **1-2/10**: Unreliable - Do not use as credible source
+
+## USAGE RECOMMENDATIONS
+
+### ✅ STRENGTHS
+- [Specific strength 1 with examples]
+- [Specific strength 2 with examples]
+- [Specific strength 3 with examples]
+
+### ⚠️ LIMITATIONS
+- [Specific limitation 1 with impact]
+- [Specific limitation 2 with impact]
+- [Specific limitation 3 with impact]
+
+### 🎯 VERIFICATION STRATEGY
+
+**For information from this source:**
+1. **Always verify**: [What always needs checking]
+2. **Cross-reference with**: [Specific alternative sources to check]
+3. **Pay special attention to**: [Areas of particular concern]
+4. **Contact directly for**: [When to reach out to source]
+
+### 📊 COMPARISON WITH SIMILAR SOURCES
+
+**Better than**: [Similar sources with lower reliability]
+**Comparable to**: [Sources with similar reliability level]
+**Not as reliable as**: [Higher-quality alternatives]
+
+**Provide specific, actionable guidance for using this source responsibly.**
 """,
+
             "verification_strategy": """
-You are a senior fact-checking strategist. Design a phased, actionable verification plan for a set of high-priority claims.
+Design a comprehensive verification strategy with specific action steps and timelines.
 
-<input>
-  <claims>{priority_claims}</claims>
-  <context>{domain_context}</context>
-</input>
+## VERIFICATION STRATEGY DESIGN
 
-<output>
-## Fact-Checking Strategy
+**Priority Claims**: {priority_claims}
+**Domain Context**: {domain_context}
+**Evidence Available**: {evidence_context}
+**Available Resources**: {available_resources}
 
-### Phase 1: Foundational Verification (Timeframe: 30 minutes)
-This phase aims to quickly validate the most basic components of the claims.
+## STRATEGIC VERIFICATION FRAMEWORK
 
-1.  **Entity Check**:
-    - **Action**: Verify the existence and correct spelling of all people, organizations, and locations mentioned in the claims.
-    - **Tools**: Wikipedia, official organization websites, LinkedIn.
-2.  **Primary Source Scan**:
-    - **Action**: Perform targeted searches on official government (.gov), academic (.edu), and institutional (.org) websites related to the claims.
-    - **Example Search Query**: `site:un.org "exact phrase from claim"`
-3.  **Prior Fact-Check Search**:
-    - **Action**: Check major fact-checking outlets (e.g., Snopes, PolitiFact, FactCheck.org, Reuters Fact Check) for existing reports on these or similar claims.
-    - **Tools**: Google search with terms like `"[claim keyword] fact check"`.
+### Phase 1: Rapid Assessment (15-30 minutes)
 
-### Phase 2: In-Depth Corroboration (Timeframe: 2-3 hours)
-This phase focuses on finding independent, high-quality sources to confirm or refute the claims.
+#### Primary Verification Route
 
-1.  **Multi-Source News Search**:
-    - **Action**: Find at least three independent, reputable news organizations reporting on the event or topic. Compare details and note any discrepancies.
-    - **Tools**: Google News, Reuters, Associated Press, BBC.
-2.  **Expert Identification & Search**:
-    - **Action**: Identify a subject matter expert relevant to the claim. Search for their publications, interviews, or public statements on the topic.
-    - **Tools**: Google Scholar, university faculty pages.
+1. **Official Source Check** (5 minutes)
+   - Visit primary organization websites
+   - Search press release sections
+   - Check official social media accounts
 
-### Measurable Outcome
-The goal is to classify each priority claim as 'Verified', 'Unsubstantiated', or 'False', with at least two independent sources supporting the classification.
-</output>
+2. **Quick Fact-Check Search** (10 minutes)
+   - Search Snopes, FactCheck.org, PolitiFact
+   - Look for similar claims already fact-checked
+   - Check "hoax alert" databases
+
+3. **Basic Source Verification** (15 minutes)
+   - Verify quoted individuals exist and hold claimed positions
+   - Check if organizations mentioned are real
+   - Confirm basic biographical details
+
+**Expected Outcome**: Initial credibility assessment - Proceed/Stop/Investigate Further
+
+### Phase 2: Standard Verification (1-2 hours)
+
+#### Secondary Verification Route
+
+1. **Multi-Source Corroboration** (30 minutes)
+   - Search 3-5 independent news sources
+   - Compare reporting details across sources
+   - Note discrepancies or consistencies
+
+2. **Expert Consultation** (45 minutes)
+   - Identify 2-3 relevant subject matter experts
+   - Send brief inquiry emails with specific questions
+   - Search for expert commentary on similar topics
+
+3. **Document Verification** (30 minutes)
+   - Search for original documents, studies, reports
+   - Verify publication dates and authors
+   - Check if documents are cited correctly
+
+**Expected Outcome**: Confidence level assessment - Confirm/Refute/Uncertain
+
+### Phase 3: Deep Investigation (4+ hours)
+
+#### Comprehensive Verification Route
+
+1. **Primary Source Contact** (2 hours)
+   - Direct outreach to organizations mentioned
+   - Interview with quoted individuals if possible
+   - Request original documents or data
+
+2. **Academic Literature Review** (1 hour)
+   - Search PubMed, Google Scholar, institutional repositories
+   - Review peer-reviewed research on topic
+   - Consult subject matter academic experts
+
+3. **Statistical/Data Verification** (1 hour)
+   - Verify numbers against official databases
+   - Check statistical methodologies if studies cited
+   - Confirm data interpretation accuracy
+
+**Expected Outcome**: Definitive verification status
+
+## RESOURCE ALLOCATION STRATEGY
+
+### High-Priority Claims (60% of resources)
+**Criteria**: Central to article's main message, high public impact
+**Approach**: Full Phase 1-3 verification
+**Success Metrics**: Definitive confirmation or refutation
+
+### Medium-Priority Claims (30% of resources)
+**Criteria**: Supporting evidence, moderate impact
+**Approach**: Phase 1-2 verification
+**Success Metrics**: Reasonable confidence in assessment
+
+### Low-Priority Claims (10% of resources)
+**Criteria**: Background information, minimal impact
+**Approach**: Phase 1 rapid assessment only
+**Success Metrics**: Basic credibility check completed
+
+## RISK MITIGATION STRATEGY
+
+### Challenge: Source Inaccessibility
+**Solution**:
+- Maintain database of backup expert contacts
+- Use archived versions of websites (Wayback Machine)
+- Employ FOIA requests for government information
+
+### Challenge: Time Sensitivity
+**Solution**:
+- Prioritize claims by potential impact
+- Use parallel verification processes
+- Publish preliminary findings with updates
+
+### Challenge: Conflicting Information
+**Solution**:
+- Document all conflicting sources
+- Assess relative credibility of conflicting sources
+- Seek additional independent verification
+- Clearly communicate uncertainty to readers
+
+### Challenge: Incomplete Information
+**Solution**:
+- Clearly identify what cannot be verified
+- Explain limitations in verification process
+- Provide guidance on interpreting partial information
+- Update findings as new information becomes available
+
+## SUCCESS METRICS & DELIVERABLES
+
+### Verification Confidence Levels
+- **HIGH (90%+ confidence)**: Multiple independent sources confirm
+- **MEDIUM (70-89% confidence)**: Preponderance of evidence supports
+- **LOW (50-69% confidence)**: Some evidence but significant gaps
+- **INSUFFICIENT (<50% confidence)**: Cannot verify with available resources
+
+### Final Deliverables
+1. **Verification Summary**: Clear status for each major claim
+2. **Source Documentation**: Complete list of sources consulted
+3. **Evidence Archive**: Key documents and screenshots preserved
+4. **Uncertainty Report**: Clear identification of unresolved questions
+5. **Update Protocol**: Plan for incorporating new information
+
+**Provide specific timelines, contact strategies, and measurable outcomes for effective verification.**
+""",
+
+            "fact_check_guidance": """
+You are a fact-checking editor providing detailed, actionable guidance for verifying specific claims.
+
+## FACT-CHECKING GUIDANCE
+
+**Claims to Verify**: {extracted_claims}
+**Recommended Sources**: {recommended_sources}
+**Verification Priority**: {verification_priority}
+**Available Time**: {time_constraints}
+
+## CLAIM PRIORITIZATION & TRIAGE
+
+### 🔴 CRITICAL CLAIMS (Verify First - 60% of effort)
+**Criteria**: Central to article, high public impact, easily verifiable
+**Examples from article**: [List specific critical claims]
+**Verification Deadline**: Within 2 hours
+
+### 🟡 IMPORTANT CLAIMS (Verify Second - 30% of effort)
+**Criteria**: Supporting main narrative, moderate impact, requires some effort
+**Examples from article**: [List specific important claims]
+**Verification Deadline**: Within 6 hours
+
+### 🟢 SUPPORTING CLAIMS (Verify if Time Allows - 10% of effort)
+**Criteria**: Background information, minimal impact, time-intensive
+**Examples from article**: [List specific supporting claims]
+**Verification Deadline**: Within 24 hours
+
+## DETAILED VERIFICATION ACTION PLAN
+
+### For Each Priority Claim, Follow This Protocol:
+
+#### Step 1: Information Gathering (Time: 15-30 minutes per claim)
+
+1. **Primary Source Identification**
+   - Who originally made this claim?
+   - What organization released this information?
+   - When was this claim first made public?
+
+2. **Supporting Evidence Collection**
+   - Official documents that should exist
+   - Expert opinions that can be solicited
+   - Statistical data that can be verified
+
+3. **Alternative Source Mapping**
+   - Independent organizations that would know
+   - Experts who could confirm or deny
+   - Databases containing relevant information
+
+#### Step 2: Source Contact Strategy (Time: 30-60 minutes per claim)
+
+1. **Official Organization Outreach**
+   - Call main number and ask for press office
+   - Email specific questions to media relations
+   - Check recent press releases and announcements
+
+2. **Expert Consultation**
+   - Identify 2-3 subject matter experts
+   - Send specific questions via email
+   - Provide context but don't reveal your hypothesis
+
+3. **Peer Verification**
+   - Contact other journalists who cover this beat
+   - Check with fact-checking organizations
+   - Search academic/professional networks
+
+#### Step 3: Evidence Documentation (Time: 15-30 minutes per claim)
+
+1. **Source Verification**
+   - Screenshots of relevant web pages
+   - PDF downloads of important documents
+   - Email confirmations from official sources
+
+2. **Quote Verification**
+   - Audio/video of original statements if available
+   - Official transcripts or press releases
+   - Context of when and where statements were made
+
+3. **Statistical Verification**
+   - Original data sources and methodologies
+   - Peer review status of cited studies
+   - Potential conflicts of interest in research
+
+## FACT-CHECKING BEST PRACTICES
+
+### The Multiple Source Rule
+✅ **GOLD STANDARD**: 3+ independent sources confirm
+✅ **ACCEPTABLE**: 2 independent sources + official document
+⚠️ **CAUTION**: Single source, even if authoritative
+❌ **INSUFFICIENT**: No independent verification possible
+
+### Primary Source Priority
+1. **Tier 1**: Original documents, official statements, direct witnesses
+2. **Tier 2**: Expert analysis, peer-reviewed research, established news reporting
+3. **Tier 3**: Secondary reporting, aggregated information, unverified claims
+
+### Expert Validation Protocol
+- **Relevant Expertise**: Expert's knowledge directly relates to claim
+- **Independence**: Expert has no financial/personal interest in outcome
+- **Recognition**: Expert is acknowledged by peers in the field
+- **Transparency**: Expert willing to be quoted and provide credentials
+
+## QUALITY ASSURANCE CHECKLIST
+
+### Before Publishing Fact-Check Results:
+☐ **Source Independence Verified**: Confirmed sources are truly independent
+☐ **Bias Assessment Completed**: Accounted for potential source biases
+☐ **Context Verified**: Ensured quotes/data aren't taken out of context
+☐ **Alternative Explanations Considered**: Explored other plausible interpretations
+☐ **Expert Review Obtained**: At least one subject matter expert consulted
+☐ **Documentation Archived**: All evidence properly saved and attributed
+☐ **Confidence Level Assigned**: Clear assessment of verification certainty
+
+## VERIFICATION STATUS REPORTING
+
+### Status Categories:
+- **✅ CONFIRMED**: Multiple reliable sources verify claim is accurate
+- **❌ REFUTED**: Multiple reliable sources contradict claim
+- **❓ UNCERTAIN**: Insufficient evidence to confirm or refute claim
+- **🔄 ONGOING**: Verification in progress, awaiting key source responses
+
+### For Each Verified Claim, Report:
+1. **Verification Status**: [Confirmed/Refuted/Uncertain/Ongoing]
+2. **Evidence Summary**: Key supporting or contradicting evidence
+3. **Source Quality**: Assessment of source reliability and independence
+4. **Confidence Level**: How certain the verification conclusion is
+5. **Context Notes**: Important caveats or limitations
+6. **Update Schedule**: When new information might become available
+
+## COMMON VERIFICATION PITFALLS TO AVOID
+
+### ❌ False Confirmation
+- Don't stop at first source that confirms your hypothesis
+- Always seek disconfirming evidence
+- Be wary of circular sourcing (sources citing each other)
+
+### ❌ Authority Bias
+- Don't assume official sources are always accurate
+- Verify credentials of claimed experts
+- Question conflicts of interest
+
+### ❌ Urgency Pressure
+- Don't sacrifice accuracy for speed
+- Clearly label preliminary findings as such
+- Build in time for source responses
+
+**Provide specific, actionable steps with realistic timelines and measurable verification standards.**
 """
         }
-
+    
     def _get_claim_extractor_prompts(self) -> Dict[str, str]:
-        """Prompts for extracting claims, enhanced with a few-shot example for format consistency."""
+        """Standard claim extraction prompts with enhanced formatting"""
         return {
             "claim_extraction": """
-You are a meticulous AI analyst. Your job is to read an article and extract the 5 most significant, verifiable claims.
+You are an expert fact-checker extracting verifiable claims from news articles.
 
 **Article**: {article_text}
+**Classification**: {prediction} (Confidence: {confidence:.2%})
+**Topic**: {topic_domain}
 
-### Instructions
-1.  Identify claims that are objective and can be proven true or false.
-2.  Avoid opinions, predictions, or subjective statements.
-3.  Format EACH claim using the specified XML structure.
-4.  Do not include any other text or explanation outside the <claims> block.
+## CLAIM EXTRACTION GUIDELINES
 
-### Example
-<claims>
-  <claim>
-    <text>"The new policy will increase national GDP by 3% next year."</text>
-    <type>Statistical</type>
-    <priority>High</priority>
-    <verifiability_score>8/10</verifiability_score>
-    <keywords>["GDP", "economic policy", "growth"]</keywords>
-  </claim>
-</claims>
+Extract **5-8 specific, verifiable claims** using this format:
 
-### Your Turn
-Now, analyze the article provided and extract the top 5 claims in the same format.
+### Claim 1: [Priority Level]
+**Text**: "Exact quote or paraphrase from article"
+**Type**: Statistical/Event/Attribution/Research/Policy/Causal/Other
+**Priority**: 1=Critical, 2=Important, 3=Minor
+**Verifiability**: X/10 (how easily fact-checked)
+**Source**: Who made this claim
+**Verification Strategy**: How to check this claim
+**Why Important**: Significance in the article
 
-<claims>
-[Your output for the 5 claims goes here]
-</claims>
+### Focus On:
+- **Statistical Claims**: Numbers, percentages, quantities
+- **Event Claims**: Things that happened or will happen
+- **Attribution Claims**: Who said or did what
+- **Research Claims**: Scientific findings and studies
+
+### Avoid:
+- Opinions ("This is the best policy")
+- Vague statements ("Many people think")
+- Predictions ("This will probably happen")
+
+Extract the most important verifiable claims using this exact format.
 """,
+
             "verification_analysis": """
-You are a verification analyst. For each provided claim, outline a clear and actionable fact-checking plan.
+Analyze how the extracted claims can be fact-checked:
 
-<claims_to_analyze>
-{extracted_claims}
-</claims_to_analyze>
+**Claims**: {extracted_claims}
 
-<output>
-## Verification Plan
-For each claim, provide a structured plan below.
+For each claim, provide:
+- **Primary Sources**: Where to find original evidence
+- **Expert Verification**: Which experts could confirm/deny
+- **Documentation**: What documents should exist
+- **Timeline**: Whether timing can be verified
+- **Search Strategy**: Specific search terms and databases
 
-<verification_plan>
-  <claim_text>"[Repeat the text of the first claim here]"</claim_text>
-  <primary_source_type>[What kind of primary source could verify this? e.g., 'Government census data', 'Company quarterly report', 'Court transcript']</primary_source_type>
-  <expert_to_consult>[What type of expert would be authoritative on this topic? e.g., 'A constitutional law professor', 'A climate scientist specializing in arctic ice']</expert_to_consult>
-  <search_strategy>[Provide a specific, effective search engine query to start the investigation. e.g., 'site:.gov "official poverty rate" 2023 report']</search_strategy>
-</verification_plan>
-
-<verification_plan>
-  <claim_text>"[Repeat the text of the second claim here]"</claim_text>
-  <primary_source_type>[Specify primary source type]</primary_source_type>
-  <expert_to_consult>[Specify expert type]</expert_to_consult>
-  <search_strategy>[Provide a specific search query]</search_strategy>
-</verification_plan>
-</output>
+Focus on actionable verification pathways.
 """,
+
             "claim_prioritization": """
-You are a news editor. Prioritize the list of extracted claims based on their importance to the article's main argument and their potential impact on the reader.
+Prioritize claims by importance and verifiability:
 
-<claims_list>
-{extracted_claims}
-</claims_list>
+**Claims**: {extracted_claims}
 
-<output>
-## Claim Prioritization
+## PRIORITY RANKING
 
-### 🔴 Critical Priority (Must Verify)
-These are foundational to the article's core message. If false, the entire article is undermined.
-- **Claim**: "[Text of the most critical claim]"
-  - **Rationale**: [Explain why this claim is critical in 1 sentence.]
-- **Claim**: "[Text of the second most critical claim]"
-  - **Rationale**: [Explain rationale.]
+### 🔴 High Priority (Verify First)
+[Most important claims that are easily verifiable]
 
-### 🟡 High Priority (Should Verify)
-These are important supporting details. If false, they weaken the article's credibility but may not invalidate its central thesis.
-- **Claim**: "[Text of an important but not critical claim]"
-  - **Rationale**: [Explain rationale.]
+### 🟡 Medium Priority (Verify Second)
+[Important claims requiring moderate effort]
 
-### 🟢 Medium Priority (Verify if Time Permits)
-These are minor or background details.
-- **Claim**: "[Text of a less important claim]"
-  - **Rationale**: [Explain rationale.]
-</output>
+### 🟢 Low Priority (Verify If Time Allows)
+[Minor claims or difficult to verify]
+
+Explain ranking rationale for each priority level.
 """
         }
-
+    
     def _get_context_analyzer_prompts(self) -> Dict[str, str]:
-        """Context analysis prompts with more nuanced, multi-faceted bias detection."""
+        """Context analysis prompts with enhanced bias detection"""
         return {
             "bias_detection": """
-You are an AI media bias analyst. Your task is to perform a structured analysis of the provided article, focusing on identifying different types of bias.
+Analyze potential bias using structured assessment:
 
-<article_info>
-  <text>{article_text}</text>
-  <source>{source}</source>
-</article_info>
+**Article**: {article_text}
+**Source**: {source}
+**Domain**: {topic_domain}
+**Classification**: {prediction} (Confidence: {confidence:.2%})
 
-<output>
-## Media Bias Analysis Report
+## BIAS ANALYSIS FRAMEWORK
 
-### 1. Loaded Language & Emotional Framing
-- **Analysis**: [Identify words and phrases that are emotionally charged rather than neutral. Explain how they frame the topic to favor a particular viewpoint.]
-- **Examples**: ["word 1", "word 2", "phrase 1"]
-- **Severity Score**: [Score from 1-10, where 10 is highly inflammatory.]
+### Political Bias Assessment
+- **Partisan Language**: Identify politically charged terms
+- **Source Selection**: Are sources balanced across perspectives?
+- **Issue Framing**: How is the topic presented?
+- **Missing Viewpoints**: What perspectives are absent?
 
-### 2. Bias by Omission & Source Selection
-- **Analysis**: [What key perspectives, facts, or sources are conspicuously missing from the article? Does the article predominantly cite sources that support one side?]
-- **Missing Perspective**: [e.g., "The article on a new tax policy omits any analysis from economists who oppose the measure."]
-- **Severity Score**: [Score from 1-10, where 10 is a completely one-sided presentation.]
+### Emotional Bias Assessment
+- **Emotional Language**: List emotion-triggering words/phrases
+- **Fear Appeals**: Identify scare tactics or threats
+- **Hope Appeals**: Identify positive manipulation
+- **Urgency Language**: False time pressure indicators
 
-### 3. Framing & Story Placement
-- **Analysis**: [How is the story framed? Is it presented as a conflict, a human-interest story, a political scandal? Is information that supports a certain view placed more prominently (e.g., in the headline or first paragraph)?]
-- **Frame Identified**: [e.g., "Conflict Frame: The issue is presented as a battle between two opposing sides, ignoring potential for compromise."]
-- **Severity Score**: [Score from 1-10, where 10 is an extremely manipulative frame.]
+### Selection Bias Assessment
+- **Information Emphasized**: What facts are highlighted?
+- **Information Omitted**: What context is missing?
+- **Source Balance**: Are opposing views included?
+- **Cherry-Picking**: Selective use of evidence?
 
-## Overall Bias Assessment
-- **Dominant Bias Type**: [Political, Corporate, Confirmation, etc.]
-- **Overall Bias Score**: [Provide an average score from 1-10.]
-- **Reader Advisory**: [A one-sentence guide for the reader, e.g., "This article presents a valid viewpoint but omits key context from the opposing side; seek out alternative sources for a balanced understanding."]
-</output>
+## BIAS SCORING
+
+**Overall Bias Level**: ___/10 (10 = Highly Biased, 1 = Minimal Bias)
+
+### Reader Advisory
+- **Be aware of**: Specific bias concerns
+- **Seek additional perspectives from**: Alternative source types
+- **Question**: Particular claims or framings
 """,
+
             "framing_analysis": """
-You are a narrative analyst. Deconstruct the framing of the provided article.
+Analyze how this article frames its subject matter:
 
 **Article**: {article_text}
+**Previous Analysis**: {previous_analysis}
 
-<output>
-## Narrative Framing Analysis
+## FRAMING ANALYSIS
 
-1.  **Primary Frame**:
-    - **Description**: How is the central issue characterized? (e.g., as an economic crisis, a moral failing, a technological opportunity, a public health threat).
-    - **Evidence**: Quote the headline or a key sentence that establishes this frame.
+### Narrative Structure
+- **Primary Frame**: How is the main issue characterized?
+- **Problem Definition**: What's the central problem/opportunity?
+- **Causal Attribution**: Who/what is credited or blamed?
+- **Solution Framing**: What actions are endorsed?
 
-2.  **Problem & Solution Framing**:
-    - **The Problem**: According to the article, what is the core problem that needs to be solved?
-    - **The Proposed Solution**: What solution or course of action is explicitly or implicitly endorsed by the article's framing?
+### Audience & Perspective
+- **Target Audience**: Who is this written for?
+- **Assumed Knowledge**: What background is assumed?
+- **Missing Voices**: Whose perspectives are absent?
+- **Alternative Frames**: How could this be framed differently?
 
-3.  **Causal Attribution (Credit & Blame)**:
-    - **Who/What is Blamed?**: Which individuals, groups, or factors are presented as the cause of the problem?
-    - **Who/What is Credited?**: Which individuals, groups, or factors are presented as heroes or positive agents?
-
-4.  **Missing Perspectives**:
-    - **Whose voice is absent?**: Identify a key stakeholder or viewpoint that is not included in the narrative.
-    - **Alternative Frame**: Briefly describe how the story could be framed differently if that missing voice were included.
-</output>
+Provide specific examples from the text supporting your analysis.
 """,
+
             "emotional_manipulation": """
-You are a psychological analyst specializing in rhetoric. Identify and categorize any emotional manipulation techniques used in the text.
+Identify emotional manipulation techniques:
 
 **Article**: {article_text}
+**Emotional Indicators**: {emotional_indicators}
 
-<output>
-## Emotional Manipulation Audit
+## EMOTIONAL MANIPULATION ANALYSIS
 
-### Appeal to Fear
-- **Technique**: [Describe the specific fear being targeted, e.g., "Fear of economic collapse," "Fear of personal safety."].
-- **Example**: "[Quote a specific phrase or sentence from the article that employs this technique.]"
-- **Impact Score**: [1-10, how strongly this technique is used.]
+### Fear-Based Appeals
+- **Threat Amplification**: Examples of exaggerated dangers
+- **Urgency Creation**: Artificial time pressure examples
+- **Vulnerability Targeting**: Appeals to specific fears
 
-### Appeal to Anger/Outrage
-- **Technique**: [Describe how the article provokes anger, e.g., "Framing an issue as a grave injustice," "Identifying a scapegoat."].
-- **Example**: "[Quote a specific phrase or sentence.]"
-- **Impact Score**: [1-10].
+### Anger & Outrage Tactics
+- **Injustice Framing**: Examples of unfairness emphasis
+- **Enemy Identification**: Us vs. them language
+- **Moral Violations**: Appeals to violated principles
 
-### Appeal to Hope/Salvation
-- **Technique**: [Describe how the article offers an overly simplified or miraculous solution, e.g., "Presenting a leader as a savior," "Promising a utopian outcome."].
-- **Example**: "[Quote a specific phrase or sentence.]"
-- **Impact Score**: [1-10].
+### Hope & Inspiration Manipulation
+- **Solution Oversimplification**: Unrealistic easy fixes
+- **Hero Worship**: Figures presented as saviors
+- **Future Promises**: Unrealistic positive outcomes
 
-### Overall Manipulativeness Score
-- **Score**: [Average of the impact scores.]
-- **Reader Advisory**: [One-sentence advice, e.g., "The reader should be aware that the article's arguments are heavily reliant on provoking fear rather than presenting neutral evidence."].
-</output>
+**Manipulation Score**: ___/10 (10 = Highly Manipulative)
+
+### Reader Advisory
+Be aware of: [Specific manipulation techniques present]
+Seek balanced perspective on: [Emotionally charged claims]
 """,
+
             "propaganda_detection": """
-You are a propaganda detection AI. Analyze the provided text for classic and modern propaganda techniques. For each technique found, provide a clear example from the text.
+Analyze propaganda techniques present in this article:
 
 **Article**: {article_text}
+**Classification**: {prediction} (Confidence: {confidence:.2%})
 
-<output>
-## Propaganda Technique Analysis
+## PROPAGANDA TECHNIQUE ANALYSIS
 
-<technique>
-  <name>Name-Calling</name>
-  <present>[Yes/No]</present>
-  <example>[If Yes, quote the example from the text, e.g., "Referring to opponents as 'traitors'."]</example>
-</technique>
+### Classical Propaganda Methods
+- **Name-Calling**: Negative labels for people/ideas/institutions
+- **Glittering Generalities**: Emotionally appealing but vague terms
+- **Transfer**: Connecting ideas with positive/negative symbols
+- **Testimonial**: Inappropriate celebrity/authority endorsements
+- **Plain Folks**: False appeals to common people
+- **Card Stacking**: One-sided argument presentation
+- **Bandwagon**: "Everyone's doing it" pressure
 
-<technique>
-  <name>Glittering Generalities</name>
-  <present>[Yes/No]</present>
-  <example>[If Yes, quote the example, e.g., "Using vague but positive terms like 'freedom' and 'strength' without specific details."]</example>
-</technique>
+### Modern Propaganda Techniques
+- **Astroturfing**: Fake grassroots movements
+- **False Flag Operations**: Misattributed actions
+- **Gaslighting**: Making readers question reality
+- **Whataboutism**: Deflecting criticism with other issues
 
-<technique>
-  <name>Card Stacking</name>
-  <present>[Yes/No]</present>
-  <example>[If Yes, describe the one-sided evidence presented, e.g., "Article lists five arguments for a policy but zero arguments against it."]</example>
-</technique>
+**Propaganda Intensity**: ___/10
 
-<technique>
-  <name>Bandwagon</name>
-  <present>[Yes/No]</present>
-  <example>[If Yes, quote the example, e.g., "'A growing number of citizens agree that this is the only way forward'."]</example>
-</technique>
-
-<technique>
-  <name>Whataboutism</name>
-  <present>[Yes/No]</present>
-  <example>[If Yes, describe the deflection, e.g., "When criticized about Topic A, the author deflects by bringing up an unrelated flaw in Topic B."]</example>
-</technique>
-
-### Summary
-- **Primary Technique Used**: [Identify the most dominant propaganda technique.]
-- **Propaganda Intensity**: [Low/Medium/High] - Based on the frequency and severity of the techniques used.
-</output>
+Provide specific examples from the text for each technique identified.
 """
         }
-
+    
     def _get_evidence_evaluator_prompts(self) -> Dict[str, str]:
-        """Evidence evaluation prompts, upgraded for extreme URL specificity and structured output."""
+        """Evidence evaluation prompts with enhanced quality assessment"""
         return {
             "evidence_evaluation": """
-You are 'Certus', an AI evidence evaluator. Your task is to provide specific, actionable, and directly relevant verification links for claims within the provided article.
+You are a fact-checking specialist providing SPECIFIC, ACTIONABLE evidence verification links.
 
-**CRITICAL RULE**: You are forbidden from providing generic homepage URLs. Every URL must be a deep link to a specific article, report, or dataset that directly addresses the claim.
+**ARTICLE TO VERIFY**: {article_text}
+**KEY CLAIMS**: {extracted_claims}
+**CLASSIFICATION**: {prediction} ({confidence:.1%} confidence)
 
-<article_data>
-  <text>{article_text}</text>
-  <claims>{extracted_claims}</claims>
-</article_data>
+## EVIDENCE VERIFICATION SOURCES
 
-<output>
-## Evidence Verification Dossier
+Provide **EXACTLY 5 SPECIFIC VERIFICATION LINKS** that directly address claims in this article:
 
-Provide the top 3 most relevant verification sources you can find.
+### 1. PRIMARY VERIFICATION SOURCE
+**Specific Claim**: [Quote exact claim from article]
+**Verification URL**: [Direct link to source that confirms/refutes this claim]
+**What It Proves**: [Exactly what this source confirms or contradicts]
+**Search Query**: "exact claim text" site:official-domain.org
 
-<evidence_item>
-  <claim>"[Quote the exact claim from the article being verified.]"</claim>
-  <source_url>[The full, specific URL of the verification source.]</source_url>
-  <source_type>[Primary Document, Peer-Reviewed Study, Statistical Database, Reputable News Report]</source_type>
-  <conclusion>[State clearly whether this source CONFIRMS, CONTRADICTS, or PROVIDES CONTEXT for the claim.]</conclusion>
-  <summary>[Provide a one-sentence summary of what the evidence shows. e.g., "The linked CDC report shows a 15% increase, contradicting the article's claim of 50%."]</summary>
-</evidence_item>
+### 2. STATISTICAL/DATA VERIFICATION  
+**Specific Claim**: [Quote statistical claim from article]
+**Verification URL**: [Direct link to official statistics/data]
+**What It Proves**: [Exact numbers or data this source provides]
+**Search Query**: [Exact search terms to find this data]
 
-<evidence_item>
-  <claim>"[Quote the next claim.]"</claim>
-  <source_url>[The full, specific URL of the verification source.]</source_url>
-  <source_type>[Primary Document, Peer-Reviewed Study, Statistical Database, Reputable News Report]</source_type>
-  <conclusion>[CONFIRMS / CONTRADICTS / PROVIDES CONTEXT]</conclusion>
-  <summary>[One-sentence summary of the evidence.]</summary>
-</evidence_item>
+### 3. EXPERT VERIFICATION
+**Specific Claim**: [Quote expert opinion/quote from article]  
+**Verification URL**: [Direct link to expert's actual statement/research]
+**What It Proves**: [What expert actually said vs. what's claimed]
+**Search Query**: "expert name" + "exact quote" + original source
 
-### Final Check
-Review the `source_url` fields. Are they all deep links? If not, correct them before finalizing.
-</output>
+### 4. INSTITUTIONAL CONFIRMATION
+**Specific Claim**: [Quote institutional claim from article]
+**Verification URL**: [Direct link to official institutional response/data]  
+**What It Proves**: [Official position vs. what article claims]
+**Search Query**: site:institution.org + "specific topic"
+
+### 5. TIMELINE/FACTUAL VERIFICATION
+**Specific Claim**: [Quote date/event claim from article]
+**Verification URL**: [Direct link proving/disproving timeline]
+**What It Proves**: [Actual dates/events vs. claimed dates/events]
+**Search Query**: "event name" + "actual date" + reliable source
+
+## VERIFICATION INSTRUCTIONS
+For each source above:
+1. **Copy the exact URL** - must be clickable and specific to the claim
+2. **Quote the specific text** from the article being verified  
+3. **Explain exactly what** each source proves or disproves
+4. **Provide search terms** that readers can use independently
+
+**DO NOT provide generic institutional homepages - only specific verification URLs**
 """,
+
             "source_quality": """
-You are a source quality auditor. Evaluate the portfolio of sources cited in an article.
+Evaluate source quality and credibility:
 
-<input>
-  <article_text>{article_text}</article_text>
-  <source_list>{source_list}</source_list>
-</input>
+**Article**: {article_text}
+**Sources**: {source_list}
 
-<output>
-## Source Portfolio Quality Report
+## SOURCE QUALITY EVALUATION
 
-### Source Diversity & Balance
-- **Analysis**: [Evaluate the range of sources. Are they all from one political viewpoint? Is there a mix of primary, secondary, and expert sources? Or does the article rely on a single type of source?]
-- **Diversity Score**: [Score from 1-10, where 10 is a highly diverse and balanced portfolio.]
+### Individual Source Assessment
+For each major source:
+- **Authority Level**: Expert/Official/Institutional/Individual
+- **Relevance**: How relevant to the claims?
+- **Independence**: Potential conflicts of interest?
+- **Accessibility**: Can readers verify this source?
+- **Quality Score**: ___/10
 
-### Source Specificity & Verifiability
-- **Analysis**: [Are the sources cited with specific links, titles, and dates? Or are they vague references like "studies show" or "experts say"? How many of the sources provide specific, article-level links vs. generic homepages?]
-- **Verifiability Score**: [Score from 1-10, where 10 means all sources are specific and easily verifiable.]
+### Overall Source Portfolio
+- **Source Diversity**: Primary/Secondary/Expert/Official mix
+- **Perspective Range**: Multiple viewpoints represented?
+- **Independence Level**: How independent from each other?
+- **Verification Potential**: How many can be checked?
 
-### Overall Portfolio Assessment
-- **Portfolio Quality Score**: [Average of the scores above, out of 10.]
-- **Primary Weakness**: [Identify the single biggest flaw in the article's sourcing, e.g., "Lack of primary sources," "Reliance on biased commentators," "Vague, non-verifiable references."]
-- **Recommendation**: [e.g., "The reader should independently verify the claims as the source portfolio is one-sided and lacks primary evidence."].
-</output>
+**Portfolio Quality Score**: ___/10
+
+### Source Reliability Ranking
+1. **Most Reliable**: [Highest quality sources]
+2. **Moderately Reliable**: [Medium quality sources]
+3. **Questionable**: [Lowest quality sources]
+
+### Verification Recommendations
+- **Priority Check**: Which sources to verify first
+- **Missing Sources**: What types needed
+- **Red Flags**: Source concerns to investigate
 """,
+
             "logical_consistency": """
-You are 'Logos', an AI specialist in logic and reasoning. Analyze the provided article for logical fallacies and structural consistency.
+Analyze logical consistency and reasoning quality:
 
-<input>
-  <article_text>{article_text}</article_text>
-  <key_claims>{key_claims}</key_claims>
-</input>
+**Article**: {article_text}
+**Key Claims**: {key_claims}
 
-<output>
-## Logical Consistency Analysis
+## LOGICAL ANALYSIS FRAMEWORK
 
-### Argument Structure
-- **Main Thesis**: [State the central argument or conclusion of the article in one sentence.]
-- **Primary Premises**: [List the 1-3 foundational assumptions or pieces of evidence upon which the thesis rests.]
-- **Logical Flow**: [Assess whether the conclusion logically follows from the premises. Is the link strong, weak, or non-existent? e.g., "Weak. The conclusion makes a causal claim that is not sufficiently supported by the correlational evidence provided."].
+### Argument Structure Assessment
+- **Premises**: Are foundational assumptions reasonable?
+- **Evidence**: Does evidence actually support conclusions?
+- **Logic Flow**: Do conclusions follow from premises?
+- **Gap Identification**: Where are logical leaps made?
 
-### Logical Fallacy Detection
-Identify up to three significant logical fallacies. If none are found, state so.
+### Fallacy Detection
+Common fallacies present:
+- **Ad Hominem**: Attacking person vs. argument
+- **Straw Man**: Misrepresenting opposing positions
+- **False Dichotomy**: Only two options when more exist
+- **Hasty Generalization**: Broad conclusions from limited examples
+- **Appeal to Authority**: Inappropriate authority citations
 
-<fallacy>
-  <name>[Name of the fallacy, e.g., "Straw Man"]</name>
-  <example>"[Quote the exact text from the article that commits this fallacy.]"</example>
-  <explanation>[Briefly explain how this example misrepresents the opposing argument.]</explanation>
-</fallacy>
+### Consistency Evaluation
+- **Internal**: Contradictory statements within article
+- **Temporal**: Do dates and sequences align?
+- **Statistical**: Do numbers add up correctly?
+- **External**: Alignment with established knowledge
 
-<fallacy>
-  <name>[Name of the fallacy, e.g., "Hasty Generalization"]</name>
-  <example>"[Quote the example.]"</example>
-  <explanation>[Briefly explain how a broad conclusion is drawn from insufficient evidence.]</explanation>
-</fallacy>
+**Logic Quality Score**: ___/10
 
-### Final Logic Assessment
-- **Logic Quality Score**: [Score from 1-10, where 10 is a perfectly sound, well-reasoned argument.]
-- **Critical Thinking Advisory**: [Provide one key question a reader should ask themselves while reading this article. e.g., "Does the evidence presented truly support the sweeping conclusion being drawn?"]
-</output>
+### Critical Thinking Advice
+- **Strong Elements**: Well-reasoned parts
+- **Weak Elements**: Poor reasoning areas
+- **Reader Should Question**: What to be skeptical about
 """,
+
             "evidence_gaps": """
-You are an investigative editor. Your job is to find what's MISSING from an article by identifying evidence gaps.
+Identify and analyze evidence gaps:
 
-<input>
-  <article_text>{article_text}</article_text>
-  <claims>{extracted_claims}</claims>
-</input>
+**Article**: {article_text}
+**Claims**: {extracted_claims}
 
-<output>
-## Evidence Gap Report
+## EVIDENCE GAP ANALYSIS
 
-### 1. Missing Data or Statistics
-- **Identified Gap**: [What specific number, statistic, or data point is claimed without sourcing, or is needed to support a major claim? e.g., "The article claims rising crime rates but provides no statistical data from a law enforcement agency to support this."]
-- **Question this Gap Raises**: [e.g., "Is the claim of 'rising crime' based on empirical data or just anecdotal evidence?"]
+### Missing Evidence Categories
 
-### 2. Missing Perspectives or Counterarguments
-- **Identified Gap**: [What relevant expert opinion, stakeholder viewpoint, or common counterargument is not mentioned or addressed? e.g., "The article advocating for a new technology fails to interview any experts who have raised concerns about its potential safety risks."]
-- **Question this Gap Raises**: [e.g., "Is the presentation of the technology intentionally one-sided to obscure potential downsides?"]
+#### Quantitative Gaps
+- **Missing Statistics**: What numbers would strengthen claims?
+- **Absent Comparisons**: What comparative data needed?
+- **Timeline Gaps**: What chronological info missing?
 
-### 3. Missing Context or Background
-- **Identified Gap**: [What crucial background information or context is omitted that could change a reader's interpretation of the events? e.g., "The article discusses a politician's controversial vote but omits the fact that it was part of a larger, bipartisan compromise bill."]
-- **Question this Gap Raises**: [e.g., "Is the politician's action being presented out of context to make it appear more controversial than it was?"]
+#### Qualitative Gaps
+- **Missing Experts**: Which experts should be consulted?
+- **Absent Perspectives**: Whose viewpoints not included?
+- **Context Omissions**: What background missing?
 
-### Overall Evidence Completeness
-- **Score**: [Score from 1-10, where 10 is comprehensive and addresses all key facets of the topic.]
-- **Recommendation**: [Advise the reader on what type of information they should seek to get a fuller picture. e.g., "The reader should seek out official crime statistics and reports from non-partisan think tanks."]
-</output>
+#### Verification Gaps
+- **Source Documentation**: What documents should exist?
+- **Cross-References**: What corroborating sources absent?
+- **Independent Confirmation**: What hasn't been verified?
+
+### Gap Priority Assessment
+1. **Critical Gaps**: Must address to maintain credibility
+2. **Important Gaps**: Should address to improve confidence
+3. **Minor Gaps**: Could address for completeness
+
+**Evidence Completeness Score**: ___/10
+
+### Gap-Filling Recommendations
+- **For Readers**: Where to find missing information
+- **Critical Questions**: What questions gaps raise
+- **Verification Steps**: How to fill gaps independently
 """
         }
-
+    
     def get_prompt_template(self, agent_name: str, prompt_type: str) -> str:
         """Get specific prompt template"""
         agent_prompts = {
@@ -672,12 +1066,12 @@ You are an investigative editor. Your job is to find what's MISSING from an arti
         
         if agent_name not in agent_prompts:
             raise ValueError(f"Unknown agent: {agent_name}")
-        
+            
         if prompt_type not in agent_prompts[agent_name]:
             raise ValueError(f"Unknown prompt type '{prompt_type}' for agent '{agent_name}'")
             
         return agent_prompts[agent_name][prompt_type]
-
+    
     def update_prompt_template(self, agent_name: str, prompt_type: str, new_template: str):
         """Update a specific prompt template"""
         agent_prompts = {
@@ -692,7 +1086,7 @@ You are an investigative editor. Your job is to find what's MISSING from an arti
             raise ValueError(f"Unknown agent: {agent_name}")
             
         agent_prompts[agent_name][prompt_type] = new_template
-
+    
     def list_available_prompts(self) -> Dict[str, List[str]]:
         """List all available prompt templates by agent"""
         return {
@@ -702,14 +1096,14 @@ You are an investigative editor. Your job is to find what's MISSING from an arti
             "context_analyzer": list(self.context_analyzer_prompts.keys()),
             "evidence_evaluator": list(self.evidence_evaluator_prompts.keys())
         }
-
+    
     def save_to_file(self, file_path: Optional[Path] = None):
         """Save all prompt templates to JSON file"""
         if file_path is None:
             from .settings import get_settings
             settings = get_settings()
             file_path = settings.project_root / "config" / "prompts.json"
-            
+        
         data = {
             "prompt_version": self.prompt_version,
             "llm_explanation_prompts": self.llm_explanation_prompts,
@@ -721,7 +1115,7 @@ You are an investigative editor. Your job is to find what's MISSING from an arti
         
         with open(file_path, 'w') as f:
             json.dump(data, f, indent=2)
-
+    
     @classmethod
     def load_from_file(cls, file_path: Path) -> 'PromptsConfig':
         """Load prompt templates from JSON file"""

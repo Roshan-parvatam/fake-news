@@ -3,7 +3,7 @@ FastAPI Server for Fake News Detection with LangGraph Orchestration
 
 Enhanced with centralized configuration, smart routing, and URL scraping support
 
-NOW WITH ALL 6 AGENTS INCLUDING URL PROCESSING + ENHANCED QUALITY VALIDATION
+NOW WITH ALL 6 AGENTS INCLUDING URL PROCESSING + QUALITY VALIDATION
 """
 
 import os
@@ -39,9 +39,9 @@ settings = get_settings()
 
 # Create FastAPI app with dynamic configuration
 app = FastAPI(
-    title="Smart Fake News Detection API with Enhanced Quality Validation",
-    description="Multi-agent fake news detection using LangGraph orchestration - ALL 6 AGENTS + ENHANCED VALIDATION",
-    version="2.2.0"  # Updated version
+    title="Smart Fake News Detection API with URL Support + Quality Validation",
+    description="Multi-agent fake news detection using LangGraph orchestration - ALL 6 AGENTS + URL SCRAPING + QUALITY VALIDATION",
+    version="2.1.1"
 )
 
 # Add CORS middleware
@@ -88,209 +88,55 @@ def is_url(text: str) -> bool:
     return text.strip().lower().startswith(('http://', 'https://'))
 
 def validate_analysis_quality(result: dict) -> dict:
-    """🔧 ENHANCED: Comprehensive analysis quality validation with synchronized scoring"""
+    """Validate analysis quality before returning to frontend"""
     issues = []
     
-    logger.info("🔍 Starting comprehensive quality validation...")
+    # Check credibility scoring - High context score means MORE bias/manipulation (bad)
+    context_scores = result.get('context_analysis', {}).get('context_scores', {})
+    overall_context_score = context_scores.get('overall_context_score', 5.0)
+    credibility_score = context_scores.get('credibility', 50)  # Default middle value
     
-    # 🎯 EXTRACT AND NORMALIZE ALL SCORES
-    # Context Analysis Scores
-    context_analysis = result.get('context_analysis', {})
-    context_scores = context_analysis.get('context_scores', {})
+    # High context score (>7) indicates high bias/manipulation = low credibility
+    if overall_context_score > 7.0 or credibility_score < 30:
+        issues.append("low_credibility_detected")
     
-    # Normalize different possible field names for context scores
-    overall_context_score = (
-        context_scores.get('overall_context_score') or 
-        context_scores.get('overall_score') or 
-        context_scores.get('overall') or 5.0
-    )
+    # Check evidence specificity
+    evidence_scores = result.get('evidence_evaluation', {}).get('evidence_scores', {})
+    source_quality_score = evidence_scores.get('source_quality_score', 5.0)
     
-    credibility_score = context_scores.get('credibility', 50)  # 0-100 scale
-    bias_score = context_scores.get('bias_score', 0.0)  # 0-10 scale  
-    
-    # Manipulation scores (multiple possible locations)
-    manipulation_score = (
-        context_analysis.get('manipulation_report', {}).get('overall_manipulation_score') or
-        context_analysis.get('manipulation_score') or
-        context_scores.get('manipulation_score') or 0.0
-    )
-    
-    # Evidence Evaluation Scores
-    evidence_evaluation = result.get('evidence_evaluation', {})
-    evidence_scores = evidence_evaluation.get('evidence_scores', {})
-    
-    source_quality_score = evidence_scores.get('source_quality_score', 5.0)  # 0-10 scale
-    logical_consistency_score = evidence_scores.get('logical_consistency_score', 5.0)
-    evidence_completeness_score = evidence_scores.get('evidence_completeness_score', 5.0)
-    overall_evidence_score = evidence_scores.get('overall_evidence_score', 5.0)
-    
-    # Verification Links
-    verification_links = evidence_evaluation.get('verification_links', [])
-    
-    logger.info(f"📊 Extracted Scores - Context: {overall_context_score:.1f}, Credibility: {credibility_score:.1f}, Evidence: {overall_evidence_score:.1f}")
-    
-    # 🚨 QUALITY ISSUE DETECTION
-    
-    # 1. Credibility Issues (HIGH PRIORITY)
-    if credibility_score < 30:
-        issues.append("very_low_credibility")
-        logger.warning(f"⚠️ Very low credibility detected: {credibility_score:.1f}%")
-    elif credibility_score < 50:
-        issues.append("low_credibility")
-        logger.warning(f"⚠️ Low credibility detected: {credibility_score:.1f}%")
-    
-    # 2. High Context Issues (bias/manipulation indicators)
-    if overall_context_score > 7.0:
-        issues.append("high_context_issues")
-        logger.warning(f"⚠️ High context issues detected: {overall_context_score:.1f}/10")
-    
-    # 3. Evidence Quality Issues
-    if source_quality_score < 3.0:
-        issues.append("very_poor_evidence_sources")
-        logger.warning(f"⚠️ Very poor evidence sources: {source_quality_score:.1f}/10")
-    elif source_quality_score < 5.0:
+    if source_quality_score < 4.0:
         issues.append("poor_evidence_sources")
-        logger.warning(f"⚠️ Poor evidence sources: {source_quality_score:.1f}/10")
     
-    # 4. Verification Link Issues
-    specific_links = [link for link in verification_links if _is_specific_verification_link(link)]
-    if len(specific_links) < 2:
-        issues.append("insufficient_specific_verification_links")
-        logger.warning(f"⚠️ Insufficient specific verification links: {len(specific_links)}")
-    
-    # 5. Explanation Formatting Issues
+    # Check explanation formatting
     explanation = result.get('final_explanation', {}).get('explanation', '')
     if not ('##' in explanation or '**' in explanation):
         issues.append("unformatted_explanation")
-        logger.warning("⚠️ Explanation lacks proper Markdown formatting")
     
-    # 6. High Manipulation/Bias Detection
-    if manipulation_score > 6.0:
-        issues.append("high_manipulation_detected")
-        logger.warning(f"⚠️ High manipulation detected: {manipulation_score:.1f}/10")
+    # Check for verification links
+    evidence_eval = result.get('evidence_evaluation', {})
+    verification_links = evidence_eval.get('verification_links', [])
+    if len(verification_links) < 2:
+        issues.append("insufficient_verification_links")
     
-    if bias_score > 6.0:
-        issues.append("high_bias_detected") 
-        logger.warning(f"⚠️ High bias detected: {bias_score:.1f}/10")
-    
-    # 🎯 CALCULATE COMPREHENSIVE QUALITY SCORE
-    # Base score starts at 100, subtract penalties for issues
-    base_score = 100
-    penalty_map = {
-        "very_low_credibility": 30,
-        "low_credibility": 20,
-        "high_context_issues": 15,
-        "very_poor_evidence_sources": 25,
-        "poor_evidence_sources": 15,
-        "insufficient_specific_verification_links": 20,
-        "unformatted_explanation": 10,
-        "high_manipulation_detected": 15,
-        "high_bias_detected": 15
-    }
-    
-    quality_score = base_score
-    for issue in issues:
-        penalty = penalty_map.get(issue, 10)
-        quality_score -= penalty
-        logger.info(f"📉 Applied penalty for {issue}: -{penalty} points")
-    
-    quality_score = max(0, quality_score)  # Ensure non-negative
-    
-    # 🏥 HUMAN REVIEW RECOMMENDATION
-    requires_human_review = (
-        quality_score < 60 or
-        len(issues) >= 3 or
-        "very_low_credibility" in issues or
-        "very_poor_evidence_sources" in issues
-    )
-    
-    # 📋 CREATE ENHANCED QUALITY VALIDATION RESULT
-    quality_validation = {
+    # Add quality metadata
+    result['quality_validation'] = {
         'issues_detected': issues,
-        'quality_score': quality_score,
-        'requires_human_review': requires_human_review,
-        'quality_level': _get_quality_level(quality_score),
+        'quality_score': max(0, 100 - len(issues) * 20),
+        'requires_human_review': len(issues) > 2,
         'credibility_assessment': {
-            'overall_context_score': round(overall_context_score, 2),
-            'credibility_score': round(credibility_score, 2),
-            'bias_score': round(bias_score, 2),
-            'manipulation_score': round(manipulation_score, 2),
-            'source_quality_score': round(source_quality_score, 2),
-            'logical_consistency_score': round(logical_consistency_score, 2),
-            'evidence_completeness_score': round(evidence_completeness_score, 2),
-            'overall_evidence_score': round(overall_evidence_score, 2),
-            'verification_links_count': len(verification_links),
-            'specific_verification_links_count': len(specific_links)
-        },
-        'recommendations': _generate_quality_recommendations(issues, quality_score),
-        'validation_timestamp': datetime.now().isoformat(),
-        'validation_version': '2.2.0'
+            'overall_context_score': overall_context_score,
+            'credibility_score': credibility_score,
+            'source_quality_score': source_quality_score,
+            'verification_links_count': len(verification_links)
+        }
     }
-    
-    # 🔄 UPDATE RESULT WITH QUALITY VALIDATION
-    result['quality_validation'] = quality_validation
-    
-    logger.info(f"✅ Quality validation completed - Score: {quality_score}/100, Issues: {len(issues)}, Review: {requires_human_review}")
     
     return result
-
-def _is_specific_verification_link(link: dict) -> bool:
-    """Check if verification link is specific (not generic domain)"""
-    if not isinstance(link, dict):
-        return False
-    
-    url = link.get('url', '')
-    if not url or not url.startswith('http'):
-        return False
-    
-    # Remove protocol and www
-    clean_url = url.replace('https://', '').replace('http://', '').replace('www.', '')
-    
-    # If it's just domain.com or domain.com/ it's too generic
-    parts = clean_url.split('/')
-    return len(parts) > 2 or (len(parts) == 2 and parts[1] != '' and len(parts[1]) > 5)
-
-def _get_quality_level(score: int) -> str:
-    """Convert quality score to level designation"""
-    if score >= 85:
-        return "EXCELLENT"
-    elif score >= 70:
-        return "GOOD"
-    elif score >= 55:
-        return "ACCEPTABLE"
-    elif score >= 40:
-        return "POOR"
-    else:
-        return "VERY POOR"
-
-def _generate_quality_recommendations(issues: list, score: int) -> list:
-    """Generate specific recommendations based on quality issues"""
-    recommendations = []
-    
-    if "very_low_credibility" in issues or "low_credibility" in issues:
-        recommendations.append("Verify claims through multiple independent sources before trusting")
-    
-    if "insufficient_specific_verification_links" in issues:
-        recommendations.append("Seek specific article-level verification sources, not generic domains")
-    
-    if "poor_evidence_sources" in issues or "very_poor_evidence_sources" in issues:
-        recommendations.append("Cross-reference with higher-quality, authoritative sources")
-    
-    if "high_manipulation_detected" in issues or "high_bias_detected" in issues:
-        recommendations.append("Be aware of potential bias and emotional manipulation in presentation")
-    
-    if "high_context_issues" in issues:
-        recommendations.append("Exercise extra caution due to detected bias and manipulation indicators")
-    
-    if score < 60:
-        recommendations.append("Consider this content unreliable without additional verification")
-    
-    return recommendations
 
 @app.on_event("startup")
 async def startup_event():
     """Validate system configuration on startup"""
-    logger.info("🚀 Starting Enhanced Fake News Detection API v2.2.0 with IMPROVED QUALITY VALIDATION")
+    logger.info("🚀 Starting Fake News Detection API v2.1.1 with ALL 6 AGENTS + URL SUPPORT + QUALITY VALIDATION")
     
     # Validate API keys
     if not settings.validate_api_keys():
@@ -311,17 +157,17 @@ async def startup_event():
         logger.error(f"❌ Error loading model configs: {str(e)}")
     
     logger.info("🎯 Smart conditional routing enabled for cost optimization")
-    logger.info("🔍 Context analyzer (6th agent) integrated into pipeline") 
+    logger.info("🔍 Context analyzer (6th agent) integrated into pipeline")
     logger.info("🔗 URL scraping support enabled for major news sites")
-    logger.info("✅ Enhanced quality validation system enabled")
+    logger.info("✅ Quality validation system enabled")
 
 @app.get("/")
 async def root():
     """Root endpoint with system information"""
     return {
-        "message": "Enhanced Fake News Detection API with LangGraph - ALL 6 AGENTS + ENHANCED QUALITY VALIDATION",
+        "message": "Smart Fake News Detection API with LangGraph - ALL 6 AGENTS + URL SUPPORT + QUALITY VALIDATION",
         "status": "running",
-        "version": "2.2.0",
+        "version": "2.1.1",
         "agents": [
             "bert_classifier",
             "claim_extractor", 
@@ -338,8 +184,7 @@ async def root():
             "cost_optimization",
             "centralized_configuration",
             "context_analysis_integration",
-            "enhanced_quality_validation_system",  # ENHANCED
-            "synchronized_score_reporting"  # NEW
+            "quality_validation_system"  # NEW
         ],
         "supported_inputs": ["raw_text", "news_urls", "times_of_india_urls"],
         "api_key_configured": settings.validate_api_keys()
@@ -370,8 +215,8 @@ async def health_check():
                 "bert_classifier",
                 "claim_extractor",
                 "context_analyzer",  # The 6th agent
-                "evidence_evaluator",
-                "credible_source", 
+                "evidence_evaluator", 
+                "credible_source",
                 "llm_explanation"
             ],
             "agents_count": 6,  # Now correctly showing 6 agents
@@ -379,8 +224,8 @@ async def health_check():
             "current_models": current_models,
             "smart_routing_enabled": True,
             "url_support_enabled": True,
-            "enhanced_quality_validation_enabled": True,  # ENHANCED
-            "config_version": "2.2.0"
+            "quality_validation_enabled": True,  # NEW
+            "config_version": "2.1.1"
         }
     
     except Exception as e:
@@ -393,9 +238,9 @@ async def health_check():
 @app.post("/analyze", response_model=AnalysisResponse)
 async def analyze_article_endpoint(request: ArticleRequest):
     """
-    🔧 ENHANCED: Analyze article for fake news with improved quality validation
+    Analyze article for fake news with smart LangGraph orchestration
     
-    NOW SUPPORTS BOTH TEXT AND URL INPUTS + SYNCHRONIZED SCORING + ENHANCED VALIDATION
+    NOW SUPPORTS BOTH TEXT AND URL INPUTS - INCLUDING TIMES OF INDIA + QUALITY VALIDATION
     """
     
     # Validate API configuration
@@ -498,14 +343,14 @@ async def analyze_article_endpoint(request: ArticleRequest):
             request.detailed
         )
         
-        # ✅ APPLY ENHANCED QUALITY VALIDATION
+        # ✅ APPLY QUALITY VALIDATION
         result = validate_analysis_quality(result)
         
         # Calculate processing time
         end_time = datetime.now()
         total_time = (end_time - start_time).total_seconds()
         
-        # 🔧 SAFELY EXTRACT AND SYNCHRONIZE RESULTS FROM LANGGRAPH STATE
+        # Safely extract results from LangGraph state
         bert_results = result.get("bert_results") or {}
         extracted_claims = result.get("extracted_claims") or []
         context_analysis = result.get("context_analysis") or {}
@@ -514,10 +359,7 @@ async def analyze_article_endpoint(request: ArticleRequest):
         final_explanation = result.get("final_explanation") or {}
         quality_validation = result.get("quality_validation", {})
         
-        # Extract synchronized scores from quality validation
-        credibility_assessment = quality_validation.get('credibility_assessment', {})
-        
-        # 📊 FORMAT RESPONSE WITH SYNCHRONIZED AND ENHANCED DATA
+        # Format response with safe extraction + quality validation
         response = AnalysisResponse(
             success=True,
             results={
@@ -533,20 +375,16 @@ async def analyze_article_endpoint(request: ArticleRequest):
                                               if isinstance(c, dict) and c.get("priority", 3) <= 2)
                 },
                 "context_analysis": {
-                    # 🔧 SYNCHRONIZED CONTEXT SCORES
-                    "overall_score": credibility_assessment.get("overall_context_score", 5.0),
+                    "overall_score": context_analysis.get("context_scores", {}).get("overall_context_score", 5.0),
                     "risk_level": context_analysis.get("context_scores", {}).get("risk_level", "UNKNOWN"),
-                    "bias_detected": credibility_assessment.get("bias_score", 0.0),
-                    "manipulation_score": credibility_assessment.get("manipulation_score", 0.0),
-                    "credibility": credibility_assessment.get("credibility_score", 50)
+                    "bias_detected": context_analysis.get("context_scores", {}).get("bias_score", 0.0),
+                    "manipulation_score": context_analysis.get("manipulation_report", {}).get("overall_manipulation_score", 0.0),
+                    "credibility": context_analysis.get("context_scores", {}).get("credibility", 50)
                 },
                 "evidence": {
-                    # 🔧 SYNCHRONIZED EVIDENCE SCORES
-                    "overall_score": credibility_assessment.get("overall_evidence_score", 5.0),
+                    "overall_score": evidence_evaluation.get("evidence_scores", {}).get("overall_evidence_score", 5.0),
                     "quality_level": evidence_evaluation.get("evidence_scores", {}).get("quality_level", "UNKNOWN"),
-                    "source_quality": credibility_assessment.get("source_quality_score", 5.0),
-                    "logical_consistency": credibility_assessment.get("logical_consistency_score", 5.0),
-                    "evidence_completeness": credibility_assessment.get("evidence_completeness_score", 5.0),
+                    "source_quality": evidence_evaluation.get("evidence_scores", {}).get("source_quality_score", 5.0),
                     "verification_links": evidence_evaluation.get("verification_links", []),
                     "sources": [
                         (s.get("name") or s.get("url") or "Unknown Source")
@@ -569,7 +407,7 @@ async def analyze_article_endpoint(request: ArticleRequest):
                     "detailed_analysis": final_explanation.get("detailed_analysis") is not None,
                     "confidence_analysis": final_explanation.get("confidence_analysis") is not None
                 },
-                # ✅ ENHANCED QUALITY VALIDATION RESULTS
+                # ✅ ADD QUALITY VALIDATION RESULTS
                 "quality_validation": quality_validation
             },
             errors=result.get("processing_errors", []),
@@ -585,29 +423,24 @@ async def analyze_article_endpoint(request: ArticleRequest):
                 "agents_used": 6,  # All 6 agents available
                 "scraping_info": scraping_info,
                 "input_type": "url" if (request.url or is_url(request.text or "")) else "text",
-                "api_version": "2.2.0",  # Updated version
+                "api_version": "2.1.1",
                 "smart_routing_enabled": True,
                 "url_support_enabled": True,
-                "enhanced_quality_validation_enabled": True,  # ENHANCED
+                "quality_validation_enabled": True,  # NEW
                 "config_version": "centralized",
                 "timestamp": start_time.isoformat(),
-                # ✅ ENHANCED QUALITY METRICS IN METADATA
+                # ✅ ADD QUALITY METRICS TO METADATA
                 "quality_score": quality_validation.get("quality_score", 100),
-                "quality_level": quality_validation.get("quality_level", "UNKNOWN"),
                 "requires_human_review": quality_validation.get("requires_human_review", False),
-                "quality_issues": quality_validation.get("issues_detected", []),
-                "quality_recommendations": quality_validation.get("recommendations", []),
-                "synchronized_scoring": True,  # NEW FLAG
-                "validation_version": quality_validation.get("validation_version", "2.2.0")
+                "quality_issues": quality_validation.get("issues_detected", [])
             }
         )
         
         logger.info(f"✅ Analysis completed in {total_time:.2f} seconds")
         logger.info(f"🎯 Processing path: {result.get('processing_path', 'unknown')}")
         logger.info(f"🤖 Agents used: 6 (including context_analyzer)")
-        logger.info(f"🔍 Quality score: {quality_validation.get('quality_score', 100)}/100 ({quality_validation.get('quality_level', 'UNKNOWN')})")
+        logger.info(f"🔍 Quality score: {quality_validation.get('quality_score', 100)}/100")
         logger.info(f"⚠️ Quality issues: {len(quality_validation.get('issues_detected', []))}")
-        logger.info(f"🏥 Requires human review: {quality_validation.get('requires_human_review', False)}")
         
         return response
         
@@ -724,9 +557,7 @@ async def get_system_metrics():
             "url_scraping_support",
             "times_of_india_support",
             "cost_optimization_active",
-            "enhanced_quality_validation_system",  # ENHANCED
-            "synchronized_score_reporting",  # NEW
-            "specific_verification_link_validation"  # NEW
+            "quality_validation_system"  # NEW
         ],
         "supported_sites": [
             "timesofindia.indiatimes.com",
@@ -738,8 +569,8 @@ async def get_system_metrics():
         "processing_modes": ["fast_track", "full_analysis"],
         "average_processing_time": "40-60 seconds",
         "cost_savings_estimate": "60-80% for obvious cases",
-        "enhanced_quality_validation_enabled": True,  # NEW
-        "api_version": "2.2.0",  # Updated
+        "quality_validation_enabled": True,
+        "api_version": "2.1.1",
         "uptime": "operational"
     }
 
@@ -750,7 +581,7 @@ async def global_exception_handler(request, exc):
     logger.error(f"🚨 Unexpected error: {str(exc)}")
     return {
         "success": False,
-        "error": "Internal server error",
+        "error": "Internal server error", 
         "message": "An unexpected error occurred. Please try again.",
         "timestamp": datetime.now().isoformat()
     }
