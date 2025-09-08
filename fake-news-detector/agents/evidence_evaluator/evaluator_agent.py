@@ -1,26 +1,23 @@
 # agents/evidence_evaluator/evaluator_agent.py
 
 """
-Enhanced Evidence Evaluator Agent - Main Implementation with Config Integration
+Enhanced Evidence Evaluator Agent with LLM-Powered Verification
 
-This agent evaluates the quality and reliability of evidence presented in articles,
-analyzing source credibility, logical consistency, and evidence completeness
-with full configuration integration and modular architecture.
+This agent evaluates evidence quality and reliability using intelligent LLMs 
+to directly provide verification links based on their credibility analysis.
 
 Features:
-- Configuration integration from config files
-- Centralized prompt management
-- Multi-criteria evidence evaluation (source quality, logic, completeness)
-- Logical fallacy detection with AI enhancement
-- Evidence gap analysis and scoring
-- Performance tracking and metrics
-- LangGraph integration ready
-- Evidence link parsing for verification URLs
+- ✅ LLM DIRECTLY PROVIDES VERIFICATION LINKS
+- ✅ NO WEB SCRAPING COMPLEXITY
+- ✅ LEVERAGES LLM'S EXISTING KNOWLEDGE FOR CREDIBILITY
+- ✅ SAFETY FILTER HANDLING
+- ✅ BUG FIXES FOR KeyError CRASHES
 """
 
 import os
 import google.generativeai as genai
 import time
+import re
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 
@@ -37,30 +34,17 @@ from utils.helpers import sanitize_text
 
 class EvidenceEvaluatorAgent(BaseAgent):
     """
-    📊 ENHANCED EVIDENCE EVALUATOR AGENT WITH CONFIG INTEGRATION
+    📊 INTELLIGENT EVIDENCE EVALUATOR AGENT WITH LLM-POWERED VERIFICATION
     
-    Modular evidence evaluation agent that inherits from BaseAgent
-    for consistent interface and LangGraph compatibility.
-    
-    Features:
-    - Inherits from BaseAgent for consistent interface
-    - Configuration integration from config files
-    - Modular component architecture (criteria, fallacy detection)
-    - AI-powered evidence analysis with systematic evaluation
-    - Multi-criteria scoring (source quality, logic, completeness)
-    - Comprehensive evidence gap analysis
-    - Performance tracking and metrics
-    - LangGraph integration ready
-    - Evidence link parsing for verification URLs
+    ✅ KEY FEATURES:
+    - LLM directly provides verification sources based on credibility analysis
+    - No external web scraping dependencies
+    - Uses the same "mental model" as credibility scoring
+    - Handles safety filters gracefully
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """
-        Initialize the enhanced evidence evaluator agent with config integration
-        
-        Args:
-            config: Configuration dictionary for runtime overrides
-        """
+        """Initialize the intelligent evidence evaluator agent"""
         
         # ✅ GET CONFIGURATION FROM CONFIG FILES
         evidence_config = get_model_config('evidence_evaluator')
@@ -77,7 +61,7 @@ class EvidenceEvaluatorAgent(BaseAgent):
         
         # ✅ USE CONFIG VALUES FOR AI MODEL SETTINGS
         self.model_name = self.config.get('model_name', 'gemini-1.5-pro')
-        self.temperature = self.config.get('temperature', 0.3)  # Lower for consistent analysis
+        self.temperature = self.config.get('temperature', 0.3)
         self.max_tokens = self.config.get('max_tokens', 3072)
         
         # ✅ EVALUATION SETTINGS FROM CONFIG
@@ -85,6 +69,11 @@ class EvidenceEvaluatorAgent(BaseAgent):
         self.evidence_threshold = self.config.get('evidence_threshold', 6.0)
         self.enable_fallacy_detection = self.config.get('enable_fallacy_detection', True)
         self.enable_gap_analysis = self.config.get('enable_gap_analysis', True)
+        
+        # ✅ NEW: LLM VERIFICATION SETTINGS (Simplified)
+        self.enable_llm_verification = self.config.get('enable_llm_verification', True)
+        self.max_verification_links = self.config.get('max_verification_links', 6)
+        self.link_quality_threshold = self.config.get('link_quality_threshold', 0.6)
         
         # ✅ EVIDENCE CRITERIA SETTINGS FROM CONFIG
         self.evidence_types = self.config.get('evidence_types', [
@@ -98,15 +87,11 @@ class EvidenceEvaluatorAgent(BaseAgent):
         
         # ✅ SCORING WEIGHTS FROM CONFIG
         self.scoring_weights = self.config.get('scoring_weights', {
-            'source_quality': 0.4,
+            'source_quality': 0.35,
             'logical_consistency': 0.3,
-            'evidence_completeness': 0.3
+            'evidence_completeness': 0.25,
+            'verification_links_quality': 0.1
         })
-        
-        # ✅ FALLACY DETECTION SETTINGS FROM CONFIG
-        self.fallacy_types_count = self.config.get('fallacy_types_count', 10)
-        self.reasoning_quality_threshold = self.config.get('reasoning_quality_threshold', 5.0)
-        self.logical_health_threshold = self.config.get('logical_health_threshold', 6.0)
         
         # ✅ QUALITY THRESHOLDS FROM CONFIG
         self.high_quality_threshold = self.config.get('high_quality_threshold', 7.0)
@@ -116,7 +101,7 @@ class EvidenceEvaluatorAgent(BaseAgent):
         # ✅ GET API KEY FROM SYSTEM SETTINGS
         self.api_key = system_settings.gemini_api_key
         
-        # ✅ LOAD PROMPTS FROM CONFIG INSTEAD OF HARDCODED
+        # ✅ LOAD PROMPTS FROM CONFIG
         self.evidence_prompt = get_prompt_template('evidence_evaluator', 'evidence_evaluation')
         self.source_quality_prompt = get_prompt_template('evidence_evaluator', 'source_quality')
         self.logical_consistency_prompt = get_prompt_template('evidence_evaluator', 'logical_consistency')
@@ -133,7 +118,7 @@ class EvidenceEvaluatorAgent(BaseAgent):
         self.quality_criteria = EvidenceQualityCriteria()
         self.fallacy_detector = LogicalFallacyDetector()
         
-        # Enhanced performance tracking with config awareness
+        # ✅ SIMPLIFIED PERFORMANCE TRACKING
         self.evaluation_metrics = {
             'total_evaluations': 0,
             'successful_evaluations': 0,
@@ -147,24 +132,23 @@ class EvidenceEvaluatorAgent(BaseAgent):
             'average_response_time': 0.0,
             'gemini_api_calls': 0,
             'config_integrated': True,
-            'verification_links_parsed': 0
+            
+            # ✅ LLM VERIFICATION METRICS
+            'llm_verification_attempts': 0,
+            'verification_links_generated': 0,
+            'high_quality_links_found': 0,
+            'llm_verification_success_rate': 0.0
         }
         
         # Rate limiting tracking
         self.last_request_time = None
         
-        self.logger.info(f"✅ Enhanced Evidence Evaluator Agent initialized with config")
+        self.logger.info(f"✅ LLM-Powered Evidence Evaluator Agent initialized")
         self.logger.info(f"🤖 Model: {self.model_name}, Temperature: {self.temperature}")
-        self.logger.info(f"🎯 Evidence Threshold: {self.evidence_threshold}, Quality Levels: {len(self.source_quality_tiers)}")
-        self.logger.info(f"🔍 Fallacy Detection: {'On' if self.enable_fallacy_detection else 'Off'}, Gap Analysis: {'On' if self.enable_gap_analysis else 'Off'}")
+        self.logger.info(f"🧠 LLM Verification: {'Enabled' if self.enable_llm_verification else 'Disabled'}")
 
     def _initialize_gemini_api(self):
-        """
-        🔐 INITIALIZE GEMINI API WITH CONFIG SETTINGS
-        
-        Sets up Gemini AI connection using configuration values optimized
-        for evidence evaluation and analysis.
-        """
+        """🔐 INITIALIZE GEMINI API WITH ENHANCED SAFETY SETTINGS"""
         try:
             if not self.api_key:
                 raise ValueError("Gemini API key not found in system settings")
@@ -183,10 +167,10 @@ class EvidenceEvaluatorAgent(BaseAgent):
             
             # ✅ USE SAFETY SETTINGS FROM CONFIG
             safety_settings = self.config.get('safety_settings', [
-                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_ONLY_HIGH"},
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_ONLY_HIGH"},
                 {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"},
             ])
             
             # Create model instance
@@ -196,28 +180,14 @@ class EvidenceEvaluatorAgent(BaseAgent):
                 safety_settings=safety_settings
             )
             
-            self.logger.info("🔐 Gemini API initialized for evidence evaluation")
+            self.logger.info("🔐 Gemini API initialized for LLM-powered evidence evaluation")
             
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize Gemini API: {str(e)}")
             raise
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        🎯 MAIN PROCESSING METHOD - LANGGRAPH COMPATIBLE WITH CONFIG
-        
-        Process input according to BaseAgent interface for LangGraph compatibility.
-        
-        Args:
-            input_data: Dictionary containing:
-                - text: Article text to evaluate
-                - extracted_claims: Claims from claim extractor
-                - context_analysis: Results from context analyzer
-                - include_detailed_analysis: Force detailed analysis
-                
-        Returns:
-            Standardized output dictionary for LangGraph
-        """
+        """🎯 MAIN PROCESSING METHOD WITH LLM VERIFICATION"""
         
         # Validate input
         is_valid, error_msg = self.validate_input(input_data)
@@ -241,162 +211,149 @@ class EvidenceEvaluatorAgent(BaseAgent):
             context_score = context_analysis.get('overall_context_score', 5.0)
             force_detailed = (
                 include_detailed_analysis or
-                context_score > 7.0 or  # High context issues trigger detailed analysis
-                len(extracted_claims) < 2 or  # Few claims need more scrutiny
+                context_score > 7.0 or
+                len(extracted_claims) < 2 or
                 self.enable_detailed_analysis
             )
             
-            # Perform evidence evaluation
-            evaluation_result = self.evaluate_evidence(
+            # ✅ PERFORM LLM-POWERED EVIDENCE EVALUATION
+            evaluation_result = self.evaluate_evidence_with_llm_verification(
                 article_text=article_text,
                 extracted_claims=extracted_claims,
                 context_analysis=context_analysis,
                 include_detailed_analysis=force_detailed
             )
             
-            # Extract overall evidence score for metrics
-            evidence_score = evaluation_result['evidence_scores']['overall_evidence_score']
+            # ✅ SAFE EXTRACTION OF EVIDENCE SCORE
+            evidence_scores = evaluation_result.get('evidence_scores', {})
+            evidence_score = evidence_scores.get('overall_evidence_score', 5.0)
             
             # End processing timer and update metrics
             self._end_processing_timer()
-            self._update_success_metrics(evidence_score / 10.0)  # Normalize to 0-1
+            self._update_success_metrics(evidence_score / 10.0)
             self.evaluation_metrics['successful_evaluations'] += 1
             
-            # Update specific evaluation metrics
-            if evaluation_result.get('evidence_analysis'):
-                self.evaluation_metrics['evidence_evaluations_generated'] += 1
-            if evaluation_result.get('source_quality_analysis'):
-                self.evaluation_metrics['source_quality_analyses_generated'] += 1
-            if evaluation_result.get('logical_consistency_analysis'):
-                self.evaluation_metrics['logical_consistency_analyses_generated'] += 1
-            if evaluation_result.get('evidence_gaps_analysis'):
-                self.evaluation_metrics['evidence_gap_analyses_generated'] += 1
+            # ✅ UPDATE LLM VERIFICATION METRICS
+            verification_links = evaluation_result.get('verification_links', [])
+            self.evaluation_metrics['verification_links_generated'] += len(verification_links)
+            self.evaluation_metrics['high_quality_links_found'] += len([
+                l for l in verification_links if l.get('quality_score', 0) >= 0.8
+            ])
             
-            # Update quality detection metrics
-            if evidence_score >= self.high_quality_threshold:
-                self.evaluation_metrics['high_quality_evidence_found'] += 1
-            elif evidence_score <= self.poor_quality_threshold:
-                self.evaluation_metrics['poor_quality_evidence_found'] += 1
-            
-            # Format output for LangGraph with config context
+            # Format output for LangGraph
             return self.format_output(
                 result=evaluation_result,
-                confidence=evidence_score / 10.0,  # Higher evidence score = higher confidence
+                confidence=evidence_score / 10.0,
                 metadata={
                     'response_time': evaluation_result['metadata']['response_time_seconds'],
                     'model_used': self.model_name,
-                    'config_version': '2.0_integrated',
-                    'agent_version': '2.0_modular',
+                    'config_version': '5.0_llm_direct',
+                    'agent_version': '5.0_llm_powered',
                     'detailed_analysis_triggered': force_detailed,
                     'evidence_threshold_used': self.evidence_threshold,
-                    'scoring_weights_used': self.scoring_weights
+                    'scoring_weights_used': self.scoring_weights,
+                    'verification_links_generated': len(verification_links),
+                    'llm_verification_enabled': self.enable_llm_verification
                 }
             )
             
         except Exception as e:
             self._end_processing_timer()
             self._update_error_metrics(e)
+            self.logger.error(f"❌ Evidence evaluation error: {str(e)}")
             return self.format_error_output(e, input_data)
 
-    def evaluate_evidence(self,
-                         article_text: str,
-                         extracted_claims: List[Dict[str, Any]],
-                         context_analysis: Dict[str, Any],
-                         include_detailed_analysis: bool = True) -> Dict[str, Any]:
+    def evaluate_evidence_with_llm_verification(self,
+                                               article_text: str,
+                                               extracted_claims: List[Dict[str, Any]],
+                                               context_analysis: Dict[str, Any],
+                                               include_detailed_analysis: bool = True) -> Dict[str, Any]:
         """
-        📊 MAIN EVIDENCE EVALUATION WITH CONFIG INTEGRATION
+        📊 MAIN EVIDENCE EVALUATION WITH LLM-POWERED VERIFICATION
         
-        Comprehensive evidence evaluation using config-driven parameters and analysis criteria.
-        
-        Args:
-            article_text: The news article text to evaluate
-            extracted_claims: Claims from claim extractor agent
-            context_analysis: Results from context analyzer agent
-            include_detailed_analysis: Enable detailed forensic evaluation
-            
-        Returns:
-            Dict containing comprehensive evidence evaluation results
+        ✅ KEY FEATURES:
+        - LLM directly provides verification sources
+        - No web scraping complexity
+        - Leverages LLM's credibility assessment knowledge
         """
         
         self._respect_rate_limits()
         start_time = time.time()
         
         try:
-            self.logger.info("Starting evidence evaluation with config integration...")
+            self.logger.info("Starting LLM-powered evidence evaluation...")
             
             # Step 1: Clean article text
             article_text = sanitize_text(article_text)
-            
-            # ✅ USE CONFIG FOR TEXT LENGTH LIMITS
             max_text_length = self.config.get('max_article_length', 4000)
             if len(article_text) > max_text_length:
                 article_text = article_text[:max_text_length] + "..."
             
-            # Step 2: Prepare evidence context from previous analyses
-            evidence_context = self._prepare_evidence_context(extracted_claims, context_analysis)
-            
-            # Step 3: Run systematic evidence quality assessment using modular components
+            # Step 2: Run systematic evidence quality assessment
             quality_assessment = self.quality_criteria.assess_evidence_quality(
                 article_text, extracted_claims
             )
             
-            # Step 4: Generate AI-powered comprehensive evidence analysis using config prompts
-            evidence_analysis = self._generate_evidence_analysis(
-                article_text, extracted_claims, context_analysis
-            )
+            # ✅ STEP 3: LLM-POWERED VERIFICATION LINK GENERATION
+            if self.enable_llm_verification:
+                verification_analysis = self._generate_llm_verification_links(
+                    article_text, extracted_claims
+                )
+            else:
+                verification_analysis = self._generate_basic_verification_fallback(extracted_claims)
             
-            # Step 5: Generate source quality analysis
-            source_quality_analysis = self._generate_source_quality_analysis(
+            # Step 4: Generate analyses with safety handling
+            source_quality_analysis = self._generate_source_quality_analysis_safe(
                 article_text, extracted_claims
             )
             
-            # Step 6: Generate logical consistency analysis
-            logical_consistency_analysis = self._generate_logical_consistency_analysis(
+            logical_consistency_analysis = self._generate_logical_consistency_analysis_safe(
                 article_text, extracted_claims
             )
             
-            # Step 7: Optional evidence gaps analysis based on config
+            # Step 5: Optional evidence gaps analysis
             evidence_gaps_analysis = None
             if (self.enable_gap_analysis and
                 (include_detailed_analysis or
-                 quality_assessment['overall_quality_score'] < self.evidence_threshold)):
-                evidence_gaps_analysis = self._generate_evidence_gaps_analysis(
+                 quality_assessment.get('overall_quality_score', 5.0) < self.evidence_threshold)):
+                
+                evidence_gaps_analysis = self._generate_evidence_gaps_analysis_safe(
                     article_text, extracted_claims
                 )
                 self.evaluation_metrics['evidence_gap_analyses_generated'] += 1
-                self.logger.info("🔍 Evidence gaps analysis generated due to quality concerns")
             
-            # Step 8: Run logical fallacy detection if enabled
+            # Step 6: Run logical fallacy detection if enabled
             fallacy_report = {}
             if self.enable_fallacy_detection:
-                fallacy_report = self.fallacy_detector.detect_fallacies(article_text)
-                self.evaluation_metrics['fallacies_detected'] += len(fallacy_report.get('detected_fallacies', []))
+                try:
+                    fallacy_report = self.fallacy_detector.detect_fallacies(article_text)
+                    self.evaluation_metrics['fallacies_detected'] += len(fallacy_report.get('detected_fallacies', []))
+                except Exception as e:
+                    self.logger.warning(f"Fallacy detection failed: {str(e)}")
+                    fallacy_report = {'detected_fallacies': []}
             
-            # Step 9: Parse verification links from evidence analysis
-            verification_links = self._parse_evidence_links(evidence_analysis)
-            if verification_links:
-                self.evaluation_metrics['verification_links_parsed'] += len(verification_links)
-            
-            # Step 10: Calculate comprehensive evidence scores using config weights
-            evidence_scores = self._calculate_evidence_scores(
-                quality_assessment, evidence_analysis, source_quality_analysis,
+            # ✅ STEP 7: CALCULATE EVIDENCE SCORES WITH LLM LINK QUALITY
+            evidence_scores = self._calculate_evidence_scores_with_llm_links(
+                quality_assessment, verification_analysis, source_quality_analysis,
                 logical_consistency_analysis, fallacy_report
             )
             
-            # Step 11: Package results with config metadata
+            # Step 8: Package results
             response_time = time.time() - start_time
+            
             result = {
-                'evidence_analysis': evidence_analysis,
+                'evidence_analysis': verification_analysis.get('analysis_text', 'Analysis not available'),
+                'verification_links': verification_analysis.get('verification_links', []),
                 'source_quality_analysis': source_quality_analysis,
                 'logical_consistency_analysis': logical_consistency_analysis,
                 'evidence_gaps_analysis': evidence_gaps_analysis,
                 'quality_assessment': quality_assessment,
                 'fallacy_report': fallacy_report,
                 'evidence_scores': evidence_scores,
-                'verification_links': verification_links,  # NEW: Add parsed verification links
-                'evidence_summary': self._create_evidence_summary(
-                    extracted_claims, quality_assessment, evidence_scores
+                'evidence_summary': self._create_evidence_summary_with_llm_links(
+                    extracted_claims, quality_assessment, evidence_scores, verification_analysis
                 ),
+                'llm_verification_used': verification_analysis.get('llm_verification_used', False),
                 'metadata': {
                     'analysis_timestamp': datetime.now().isoformat(),
                     'response_time_seconds': round(response_time, 2),
@@ -409,273 +366,442 @@ class EvidenceEvaluatorAgent(BaseAgent):
                     'fallacy_detection_enabled': self.enable_fallacy_detection,
                     'evidence_threshold': self.evidence_threshold,
                     'scoring_weights': self.scoring_weights,
-                    'verification_links_found': len(verification_links),
-                    'quality_thresholds': {
-                        'high': self.high_quality_threshold,
-                        'medium': self.medium_quality_threshold,
-                        'poor': self.poor_quality_threshold
-                    },
-                    'config_version': '2.0_integrated',
-                    'agent_version': '2.0_modular',
-                    'criteria_evaluated': len(self.evidence_types),
-                    'source_tiers_assessed': len(self.source_quality_tiers)
+                    
+                    # ✅ LLM VERIFICATION METADATA
+                    'verification_links_found': len(verification_analysis.get('verification_links', [])),
+                    'high_quality_links_count': verification_analysis.get('high_quality_links_count', 0),
+                    'llm_verification_enabled': self.enable_llm_verification,
+                    'config_version': '5.0_llm_direct',
+                    'agent_version': '5.0_llm_powered'
                 }
             }
             
-            # Step 12: Update performance metrics
-            self._update_evaluation_metrics(response_time, evidence_scores['overall_evidence_score'])
+            # Step 9: Update performance metrics
+            self._update_evaluation_metrics(response_time, evidence_scores.get('overall_evidence_score', 5.0))
             
-            self.logger.info(f"Successfully completed evidence evaluation in {response_time:.2f} seconds")
-            self.logger.info(f"📊 Overall evidence score: {evidence_scores['overall_evidence_score']:.1f}/10 ({evidence_scores['quality_level']})")
-            self.logger.info(f"🔗 Verification links found: {len(verification_links)}")
+            link_count = len(verification_analysis.get('verification_links', []))
+            high_quality_count = verification_analysis.get('high_quality_links_count', 0)
+            
+            self.logger.info(f"Successfully completed LLM-powered evidence evaluation in {response_time:.2f} seconds")
+            self.logger.info(f"📊 Overall evidence score: {evidence_scores.get('overall_evidence_score', 5.0):.1f}/10 ({evidence_scores.get('quality_level', 'UNKNOWN')})")
+            self.logger.info(f"🔗 Verification links: {link_count} total ({high_quality_count} high-quality)")
+            self.logger.info(f"🧠 LLM verification used: {verification_analysis.get('llm_verification_used', False)}")
             
             return result
             
         except Exception as e:
             self._update_evaluation_metrics(time.time() - start_time, 0, error=True)
-            self.logger.error(f"Error in evidence evaluation: {str(e)}")
+            self.logger.error(f"Error in LLM-powered evidence evaluation: {str(e)}")
             raise
 
-    def _parse_evidence_links(self, evidence_analysis: str) -> List[Dict[str, str]]:
-        """Parse specific verification links from AI analysis"""
-        links = []
-        lines = evidence_analysis.split('\n')
-        
-        current_claim = ""
-        current_url = ""
-        current_explanation = ""
-        
-        for line in lines:
-            if "**Specific Claim**:" in line:
-                current_claim = line.split(":", 1)[1].strip()
-            elif "**Verification URL**:" in line:
-                current_url = line.split(":", 1)[1].strip()
-            elif "**What It Proves**:" in line:
-                current_explanation = line.split(":", 1)[1].strip()
-                
-                # Add complete link when we have all components
-                if current_claim and current_url and current_explanation:
-                    links.append({
-                        "claim": current_claim,
-                        "url": current_url if current_url.startswith('http') else f"https://{current_url}",
-                        "explanation": current_explanation,
-                        "type": "verification"
-                    })
-                    current_claim = current_url = current_explanation = ""
-        
-        return links[:5]  # Limit to top 5
-
-    def _prepare_evidence_context(self, extracted_claims: List[Dict[str, Any]],
-                                context_analysis: Dict[str, Any]) -> str:
-        """Prepare context from previous agent analyses"""
-        context_parts = []
-        
-        # Add claims context
-        if extracted_claims:
-            claims_text = "\n".join([
-                f"- {claim.get('text', 'Unknown claim')}"
-                for claim in extracted_claims[:5]  # Limit for brevity
-            ])
-            context_parts.append(f"Key Claims:\n{claims_text}")
-        
-        # Add context analysis summary
-        if context_analysis:
-            bias_score = context_analysis.get('overall_context_score', 0)
-            risk_level = context_analysis.get('risk_level', 'Unknown')
-            context_parts.append(f"Context Analysis: {bias_score}/10 bias score, {risk_level} risk")
-        
-        return "\n\n".join(context_parts) if context_parts else "No previous analysis available"
-
-    def _generate_evidence_analysis(self, article_text: str, extracted_claims: List[Dict[str, Any]],
-                                  context_analysis: Dict[str, Any]) -> str:
+    def _generate_llm_verification_links(self, article_text: str, extracted_claims: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Generate AI-powered evidence analysis using config prompt template
-        
-        Args:
-            article_text: Article content
-            extracted_claims: Claims from extractor
-            context_analysis: Context from analyzer
-            
-        Returns:
-            Evidence analysis text
+        ✅ SIMPLE: Ask LLM directly for verification links it would use
+        Since LLM is already scoring credibility, it knows what sources to check
         """
         try:
-            # Prepare source list from claims
-            source_list = []
-            for claim in extracted_claims[:10]:  # Limit sources
-                source = claim.get('source', 'Not specified')
-                if source != 'Not specified' and source not in source_list:
-                    source_list.append(source)
+            self.logger.info("🧠 Asking LLM directly for verification sources...")
             
-            sources_text = "; ".join(source_list) if source_list else "No specific sources identified"
+            # Prepare claims summary
+            claims_text = []
+            for i, claim in enumerate(extracted_claims, 1):
+                claims_text.append(f"{i}. {claim.get('text', '')[:150]}")
             
-            # ✅ USE EVIDENCE PROMPT FROM CONFIG
-            # Extract prediction and confidence from available data
-            bert_results = context_analysis.get('bert_results', {})
-            prediction = bert_results.get('prediction', 'UNKNOWN')
-            confidence = bert_results.get('confidence', 0.0)
+            # ✅ DIRECT PROMPT: Ask LLM for verification links
+            prompt = f"""
+            You are analyzing this article for credibility and need to provide specific verification sources.
+
+            ARTICLE: {article_text[:1000]}
+
+            KEY CLAIMS TO VERIFY:
+            {chr(10).join(claims_text)}
+
+            Since you're evaluating this content's credibility, provide the SPECIFIC SOURCES you would check to verify these claims. 
+
+            For each verification source, provide in this EXACT format:
+
+            VERIFICATION SOURCE 1:
+            CLAIM: [specific claim this verifies]
+            INSTITUTION: [name of authoritative institution/database]
+            URL: [specific URL to check this claim - be as specific as possible]
+            WHY_RELIABLE: [why this source is trustworthy for this claim]
+            VERIFICATION_TYPE: [primary_source/expert_opinion/database/research_paper]
+
+            VERIFICATION SOURCE 2:
+            [continue for 3-5 sources...]
+
+            Requirements:
+            - Provide REAL, SPECIFIC URLs that actually exist
+            - Focus on authoritative sources (government, academic, medical institutions)
+            - Match each source to a specific claim
+            - Prioritize primary sources over secondary reporting
+            - Include the exact page/section that would verify the claim
+
+            The sources you recommend should be the same ones you'd mentally "check" when assessing this content's credibility.
+            """
             
-            prompt = self.evidence_prompt.format(
-                article_text=article_text,
-                extracted_claims=str(extracted_claims[:8]),  # Limit for prompt length
-                prediction=prediction,
-                confidence=confidence,
-                source_recommendations=sources_text
-            )
-            
+            self.evaluation_metrics['llm_verification_attempts'] += 1
             response = self.model.generate_content(prompt)
-            self.evaluation_metrics['gemini_api_calls'] += 1
-            self.evaluation_metrics['evidence_evaluations_generated'] += 1
             
-            return response.text
-            
+            if self._is_valid_llm_response(response):
+                analysis_text = response.candidates[0].content.parts[0].text
+                verification_links = self._parse_llm_verification_sources(analysis_text)
+                
+                high_quality_count = len([l for l in verification_links if l.get('quality_score', 0) >= 0.8])
+                
+                return {
+                    'analysis_text': f"LLM-recommended verification sources based on credibility analysis:\n\n{analysis_text}",
+                    'verification_links': verification_links,
+                    'high_quality_links_count': high_quality_count,
+                    'total_links_generated': len(verification_links),
+                    'link_generation_success': len(verification_links) > 0,
+                    'llm_verification_used': True
+                }
+            else:
+                return self._generate_basic_verification_fallback(extracted_claims)
+                
         except Exception as e:
-            self.logger.error(f"Error in evidence analysis generation: {str(e)}")
-            return f"Evidence analysis unavailable due to processing error: {str(e)}"
+            self.logger.error(f"LLM verification failed: {str(e)}")
+            return self._generate_basic_verification_fallback(extracted_claims)
 
-    def _generate_source_quality_analysis(self, article_text: str,
-                                        extracted_claims: List[Dict[str, Any]]) -> str:
-        """
-        Generate AI-powered source quality analysis using config prompt template
+    def _parse_llm_verification_sources(self, analysis_text: str) -> List[Dict[str, Any]]:
+        """Parse LLM-provided verification sources"""
         
-        Args:
-            article_text: Article content
-            extracted_claims: Claims with source attributions
+        verification_links = []
+        
+        # Split by verification source sections
+        sections = re.split(r'VERIFICATION SOURCE \d+:', analysis_text)
+        
+        for section in sections[1:]:  # Skip first empty section
+            try:
+                # Extract fields using regex
+                claim_match = re.search(r'CLAIM:\s*(.+?)(?=\n|INSTITUTION)', section, re.IGNORECASE)
+                institution_match = re.search(r'INSTITUTION:\s*(.+?)(?=\n|URL)', section, re.IGNORECASE)
+                url_match = re.search(r'URL:\s*(.+?)(?=\n|WHY_RELIABLE)', section, re.IGNORECASE)
+                why_reliable_match = re.search(r'WHY_RELIABLE:\s*(.+?)(?=\n|VERIFICATION_TYPE)', section, re.IGNORECASE)
+                verification_type_match = re.search(r'VERIFICATION_TYPE:\s*(.+?)(?=\n|$)', section, re.IGNORECASE)
+                
+                if claim_match and institution_match and url_match:
+                    claim = claim_match.group(1).strip()
+                    institution = institution_match.group(1).strip()
+                    url = url_match.group(1).strip()
+                    explanation = why_reliable_match.group(1).strip() if why_reliable_match else 'LLM-recommended source'
+                    source_type = verification_type_match.group(1).strip() if verification_type_match else 'unknown'
+                    
+                    # Clean up URL
+                    if not url.startswith(('http://', 'https://')):
+                        if url.startswith('www.'):
+                            url = f"https://{url}"
+                        elif '.' in url and not url.startswith('/'):
+                            url = f"https://{url}"
+                    
+                    # Calculate quality score based on source type and institution
+                    quality_score = self._calculate_llm_source_quality(institution, source_type, url)
+                    
+                    verification_links.append({
+                        'claim': claim,
+                        'url': url,
+                        'institution': institution,
+                        'explanation': explanation,
+                        'quality_score': quality_score,
+                        'type': 'llm_recommended',
+                        'source_type': self._map_verification_type_to_category(source_type)
+                    })
+                    
+            except Exception as e:
+                self.logger.debug(f"Failed to parse verification section: {str(e)}")
+                continue
+        
+        return verification_links[:self.max_verification_links]
+
+    def _calculate_llm_source_quality(self, institution: str, source_type: str, url: str) -> float:
+        """Calculate quality score for LLM-recommended source"""
+        
+        score = 0.6  # Base score for LLM recommendation
+        
+        institution_lower = institution.lower()
+        url_lower = url.lower()
+        source_type_lower = source_type.lower()
+        
+        # High-quality institutions
+        if any(inst in institution_lower for inst in [
+            'cdc', 'who', 'nih', 'nejm', 'harvard', 'stanford', 'mit',
+            'pubmed', 'nature', 'science', 'fda', 'government'
+        ]):
+            score += 0.3
+        
+        # High-quality domains
+        if any(domain in url_lower for domain in [
+            '.gov', '.edu', 'nejm.org', 'nature.com', 'pubmed', 'who.int'
+        ]):
+            score += 0.2
+        
+        # Source type bonus
+        if source_type_lower in ['primary_source', 'research_paper']:
+            score += 0.15
+        elif source_type_lower in ['expert_opinion', 'database']:
+            score += 0.1
+        
+        return min(1.0, max(0.3, score))
+
+    def _map_verification_type_to_category(self, verification_type: str) -> str:
+        """Map LLM verification type to standard category"""
+        
+        type_mapping = {
+            'primary_source': 'primary',
+            'expert_opinion': 'expert', 
+            'database': 'database',
+            'research_paper': 'academic',
+            'government': 'government',
+            'institutional': 'institutional'
+        }
+        
+        return type_mapping.get(verification_type.lower(), 'general')
+
+    def _generate_basic_verification_fallback(self, extracted_claims: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Basic verification fallback when LLM approach fails"""
+        
+        fallback_links = []
+        
+        for claim in extracted_claims[:self.max_verification_links]:
+            claim_text = claim.get('text', 'Unknown claim')
             
-        Returns:
-            Source quality analysis text
-        """
+            fallback_links.append({
+                'claim': claim_text,
+                'url': 'https://www.snopes.com/',
+                'institution': 'Snopes',
+                'explanation': 'General fact-checking resource',
+                'quality_score': 0.6,
+                'type': 'fallback',
+                'source_type': 'fact_checker'
+            })
+        
+        return {
+            'analysis_text': 'Basic verification sources provided as fallback.',
+            'verification_links': fallback_links,
+            'high_quality_links_count': 0,
+            'total_links_generated': len(fallback_links),
+            'link_generation_success': len(fallback_links) > 0,
+            'llm_verification_used': False
+        }
+
+    def _is_valid_llm_response(self, response) -> bool:
+        """Check if LLM response is valid and not blocked by safety filters"""
+        return (response and 
+                response.candidates and 
+                len(response.candidates) > 0 and
+                response.candidates[0].finish_reason != 2 and
+                response.candidates[0].content and
+                response.candidates[0].content.parts)
+
+    # ✅ KEEP EXISTING METHODS FOR COMPATIBILITY
+
+    def _generate_source_quality_analysis_safe(self, article_text: str, extracted_claims: List[Dict[str, Any]]) -> str:
+        """Generate source quality analysis with safety handling"""
         try:
-            # Prepare source list for analysis
             source_list = []
             for claim in extracted_claims:
                 source = claim.get('source', 'Not specified')
-                verification_strategy = claim.get('verification_strategy', 'Standard fact-checking')
                 if source != 'Not specified':
-                    source_list.append(f"Source: {source} (Strategy: {verification_strategy})")
+                    source_list.append(f"Source: {source}")
             
-            sources_text = "\n".join(source_list[:10]) if source_list else "No specific sources identified in claims"
+            sources_text = "\n".join(source_list[:10]) if source_list else "No specific sources identified"
             
-            # ✅ USE SOURCE QUALITY PROMPT FROM CONFIG
-            prompt = self.source_quality_prompt.format(
-                article_text=article_text,
-                source_list=sources_text
-            )
+            prompt = f"""
+            Please analyze source quality for this content:
+            
+            CONTENT: {article_text[:800]}
+            
+            SOURCES: {sources_text}
+            
+            Provide analysis on:
+            1. Source credibility assessment
+            2. Source diversity  
+            3. Verification potential
+            4. Overall quality rating (1-10)
+            """
             
             response = self.model.generate_content(prompt)
-            self.evaluation_metrics['gemini_api_calls'] += 1
-            self.evaluation_metrics['source_quality_analyses_generated'] += 1
             
-            return response.text
+            if not response.candidates or response.candidates[0].finish_reason == 2:
+                return self._generate_safe_source_analysis_fallback(len(source_list))
+            if not response.candidates[0].content or not response.candidates[0].content.parts:
+                return self._generate_safe_source_analysis_fallback(len(source_list))
+            
+            self.evaluation_metrics['gemini_api_calls'] += 1
+            return response.candidates[0].content.parts[0].text
             
         except Exception as e:
-            self.logger.error(f"Error in source quality analysis generation: {str(e)}")
-            return f"Source quality analysis unavailable due to processing error: {str(e)}"
+            self.logger.error(f"Error in safe source quality analysis: {str(e)}")
+            return self._generate_safe_source_analysis_fallback(len(extracted_claims))
 
-    def _generate_logical_consistency_analysis(self, article_text: str,
-                                             extracted_claims: List[Dict[str, Any]]) -> str:
-        """
-        Generate AI-powered logical consistency analysis using config prompt template
+    def _generate_safe_source_analysis_fallback(self, sources_count: int) -> str:
+        """Generate safe fallback source analysis"""
+        return f"""
+        SOURCE QUALITY ANALYSIS (AUTOMATED ASSESSMENT)
         
-        Args:
-            article_text: Article content
-            extracted_claims: Claims to analyze for logical consistency
-            
-        Returns:
-            Logical consistency analysis text
+        Sources Identified: {sources_count}
+        
+        Quality Assessment:
+        • Source verification required through institutional channels
+        • Cross-referencing with established authorities recommended  
+        • Independent verification strongly advised
+        
+        Overall Source Quality: Requires human verification
+        
+        Recommended Approach:
+        1. Verify sources through official channels
+        2. Check source credentials and expertise
+        3. Cross-reference with multiple independent sources
+        4. Look for peer review or editorial oversight
         """
+
+    def _generate_logical_consistency_analysis_safe(self, article_text: str, extracted_claims: List[Dict[str, Any]]) -> str:
+        """Generate logical consistency analysis with safety handling"""
         try:
-            # Prepare key claims for analysis
             key_claims = []
-            for claim in extracted_claims[:8]:  # Limit for analysis depth
-                claim_text = claim.get('text', 'Unknown claim')
+            for claim in extracted_claims[:6]:
+                claim_text = claim.get('text', 'Unknown claim')[:100]
                 claim_type = claim.get('claim_type', 'Other')
-                priority = claim.get('priority', 2)
-                key_claims.append(f"Priority {priority} {claim_type}: {claim_text}")
+                key_claims.append(f"{claim_type}: {claim_text}")
             
-            claims_text = "\n".join(key_claims) if key_claims else "No claims available for analysis"
+            claims_text = "\n".join(key_claims) if key_claims else "No claims available"
             
-            # ✅ USE LOGICAL CONSISTENCY PROMPT FROM CONFIG
-            prompt = self.logical_consistency_prompt.format(
-                article_text=article_text,
-                key_claims=claims_text
-            )
+            prompt = f"""
+            Please analyze logical consistency:
+            
+            CLAIMS: {claims_text}
+            
+            CONTENT: {article_text[:800]}
+            
+            Assess:
+            1. Internal logical consistency
+            2. Evidence support for claims
+            3. Reasoning quality
+            4. Consistency rating (1-10)
+            """
             
             response = self.model.generate_content(prompt)
-            self.evaluation_metrics['gemini_api_calls'] += 1
-            self.evaluation_metrics['logical_consistency_analyses_generated'] += 1
             
-            return response.text
+            if not response.candidates or response.candidates[0].finish_reason == 2:
+                return self._generate_safe_logical_analysis_fallback(len(key_claims))
+            if not response.candidates[0].content or not response.candidates[0].content.parts:
+                return self._generate_safe_logical_analysis_fallback(len(key_claims))
+            
+            self.evaluation_metrics['gemini_api_calls'] += 1
+            return response.candidates[0].content.parts[0].text
             
         except Exception as e:
-            self.logger.error(f"Error in logical consistency analysis generation: {str(e)}")
-            return f"Logical consistency analysis unavailable due to processing error: {str(e)}"
+            self.logger.error(f"Error in safe logical consistency analysis: {str(e)}")
+            return self._generate_safe_logical_analysis_fallback(len(extracted_claims))
 
-    def _generate_evidence_gaps_analysis(self, article_text: str,
-                                       extracted_claims: List[Dict[str, Any]]) -> str:
-        """
-        Generate AI-powered evidence gaps analysis using config prompt template
+    def _generate_safe_logical_analysis_fallback(self, claims_count: int) -> str:
+        """Generate safe fallback logical analysis"""
+        return f"""
+        LOGICAL CONSISTENCY ANALYSIS (AUTOMATED ASSESSMENT)
         
-        Args:
-            article_text: Article content
-            extracted_claims: Claims to analyze for evidence gaps
-            
-        Returns:
-            Evidence gaps analysis text
+        Claims Analyzed: {claims_count}
+        
+        Consistency Assessment:
+        • Logical structure requires human review
+        • Evidence support needs verification
+        • Reasoning quality requires expert analysis
+        
+        Overall Logical Consistency: Requires human assessment
+        
+        Recommended Review:
+        1. Check claim-to-claim consistency
+        2. Verify evidence-to-conclusion logic
+        3. Look for logical fallacies
+        4. Assess reasoning quality
         """
+
+    def _generate_evidence_gaps_analysis_safe(self, article_text: str, extracted_claims: List[Dict[str, Any]]) -> str:
+        """Generate evidence gaps analysis with safety handling"""
         try:
-            # ✅ USE EVIDENCE GAPS PROMPT FROM CONFIG
-            prompt = self.evidence_gaps_prompt.format(
-                article_text=article_text,
-                extracted_claims=str(extracted_claims[:6])  # Limit for focused analysis
-            )
+            prompt = f"""
+            Identify evidence gaps in this content:
+            
+            CONTENT: {article_text[:1000]}
+            
+            CLAIMS: {len(extracted_claims)} claims identified
+            
+            Please identify:
+            1. Missing supporting evidence
+            2. Unverified assertions
+            3. Evidence quality gaps
+            4. Verification needs
+            """
             
             response = self.model.generate_content(prompt)
-            self.evaluation_metrics['gemini_api_calls'] += 1
             
-            return response.text
+            if not response.candidates or response.candidates[0].finish_reason == 2:
+                return "Evidence gaps analysis not available due to content restrictions."
+            if not response.candidates[0].content or not response.candidates[0].content.parts:
+                return "Evidence gaps analysis not available due to content restrictions."
+            
+            self.evaluation_metrics['gemini_api_calls'] += 1
+            return response.candidates[0].content.parts[0].text
             
         except Exception as e:
-            self.logger.error(f"Error in evidence gaps analysis generation: {str(e)}")
-            return f"Evidence gaps analysis unavailable due to processing error: {str(e)}"
+            self.logger.error(f"Error in safe evidence gaps analysis: {str(e)}")
+            return "Evidence gaps analysis unavailable."
 
-    def _calculate_evidence_scores(self, quality_assessment: Dict, evidence_analysis: str,
-                                 source_quality_analysis: str, logical_consistency_analysis: str,
-                                 fallacy_report: Dict) -> Dict[str, Any]:
-        """
-        Calculate comprehensive evidence scores with config-aware weights
+    def _calculate_evidence_scores_with_llm_links(self, quality_assessment: Dict,
+                                                 verification_analysis: Dict,
+                                                 source_quality_analysis: str,
+                                                 logical_consistency_analysis: str,
+                                                 fallacy_report: Dict) -> Dict[str, Any]:
+        """Calculate scores with LLM link quality awareness"""
         
-        Args:
-            quality_assessment: Systematic quality assessment results
-            evidence_analysis: AI evidence analysis
-            source_quality_analysis: AI source analysis
-            logical_consistency_analysis: AI logical analysis
-            fallacy_report: Fallacy detection results
-            
-        Returns:
-            Comprehensive evidence scoring
-        """
-        
-        # 1. Source quality score from systematic assessment
+        # ✅ SAFE EXTRACTION OF BASE SCORES WITH DEFAULTS
         source_quality_score = quality_assessment.get('source_quality_score', 5.0)
-        
-        # 2. Evidence completeness score
         completeness_score = quality_assessment.get('completeness_score', 5.0)
         
-        # 3. Logical consistency score estimation from AI analysis
-        logical_score = self._estimate_logical_score(logical_consistency_analysis, fallacy_report)
+        # ✅ LLM LINK QUALITY CALCULATION
+        verification_links = verification_analysis.get('verification_links', [])
+        high_quality_count = verification_analysis.get('high_quality_links_count', 0)
         
-        # 4. Evidence strength score from AI analysis
-        evidence_strength_score = self._estimate_evidence_strength(evidence_analysis)
+        link_quality_score = 3.0  # Base score
         
-        # ✅ CALCULATE WEIGHTED OVERALL SCORE USING CONFIG WEIGHTS
-        source_component = source_quality_score * self.scoring_weights['source_quality']
-        logical_component = logical_score * self.scoring_weights['logical_consistency']
-        completeness_component = completeness_score * self.scoring_weights['evidence_completeness']
+        if len(verification_links) >= 3:
+            link_quality_score += 2.0  # Bonus for multiple links
+        if high_quality_count >= 2:
+            link_quality_score += 2.5  # Bonus for high-quality links
+        if verification_analysis.get('llm_verification_used', False):
+            link_quality_score += 1.5  # Bonus for LLM verification
+        if len(verification_links) == 0:
+            link_quality_score -= 1.5  # Penalty for no links
         
-        overall_score = source_component + logical_component + completeness_component
+        # Average quality score of individual links
+        if verification_links:
+            try:
+                avg_link_quality = sum(link.get('quality_score', 0.5) for link in verification_links) / len(verification_links)
+                link_quality_score = (link_quality_score + avg_link_quality * 7) / 2
+            except:
+                pass
         
-        # Quality level assessment with config thresholds
+        link_quality_score = max(0, min(10, link_quality_score))
+        
+        # Logical consistency score
+        logical_score = 7.0 - len(fallacy_report.get('detected_fallacies', []))
+        logical_score = max(1.0, min(10.0, logical_score))
+        
+        # ✅ SAFE CALCULATION OF OVERALL SCORE
+        try:
+            overall_score = (
+                (source_quality_score * self.scoring_weights.get('source_quality', 0.35)) +
+                (logical_score * self.scoring_weights.get('logical_consistency', 0.3)) +
+                (completeness_score * self.scoring_weights.get('evidence_completeness', 0.25)) +
+                (link_quality_score * self.scoring_weights.get('verification_links_quality', 0.1))
+            )
+        except Exception as e:
+            self.logger.warning(f"Error in score calculation, using fallback: {str(e)}")
+            overall_score = (source_quality_score + logical_score + completeness_score + link_quality_score) / 4
+        
+        overall_score = max(0, min(10, overall_score))
+        
+        # Quality level assessment
         if overall_score >= self.high_quality_threshold:
             quality_level = "HIGH QUALITY"
         elif overall_score >= self.medium_quality_threshold:
@@ -685,7 +811,7 @@ class EvidenceEvaluatorAgent(BaseAgent):
         else:
             quality_level = "VERY POOR QUALITY"
         
-        # Evidence reliability assessment
+        # Enhanced reliability factors
         reliability_factors = []
         if source_quality_score >= 7.0:
             reliability_factors.append("Strong source quality")
@@ -693,10 +819,14 @@ class EvidenceEvaluatorAgent(BaseAgent):
             reliability_factors.append("Logical consistency")
         if completeness_score >= 7.0:
             reliability_factors.append("Complete evidence")
-        if len(fallacy_report.get('detected_fallacies', [])) == 0:
-            reliability_factors.append("No logical fallacies")
+        if link_quality_score >= 7.0:
+            reliability_factors.append("High-quality verification links")
+        if verification_analysis.get('llm_verification_used', False):
+            reliability_factors.append("LLM verification analysis")
+        if len(verification_links) > 0:
+            reliability_factors.append("Verification sources available")
         
-        # Evidence concerns
+        # Enhanced evidence concerns
         evidence_concerns = []
         if source_quality_score < 4.0:
             evidence_concerns.append(f"Poor source quality ({source_quality_score:.1f}/10)")
@@ -704,19 +834,27 @@ class EvidenceEvaluatorAgent(BaseAgent):
             evidence_concerns.append(f"Logical inconsistencies ({logical_score:.1f}/10)")
         if completeness_score < 4.0:
             evidence_concerns.append(f"Incomplete evidence ({completeness_score:.1f}/10)")
-        if len(fallacy_report.get('detected_fallacies', [])) > 2:
-            evidence_concerns.append(f"Multiple logical fallacies ({len(fallacy_report.get('detected_fallacies', []))} found)")
+        if link_quality_score < 4.0:
+            evidence_concerns.append(f"Poor verification link quality ({link_quality_score:.1f}/10)")
+        if len(verification_links) == 0:
+            evidence_concerns.append("No verification sources available")
         
         return {
             'source_quality_score': round(source_quality_score, 2),
             'logical_consistency_score': round(logical_score, 2),
             'evidence_completeness_score': round(completeness_score, 2),
-            'evidence_strength_score': round(evidence_strength_score, 2),
+            'verification_links_quality_score': round(link_quality_score, 2),
             'overall_evidence_score': round(overall_score, 2),
             'quality_level': quality_level,
             'reliability_factors': reliability_factors,
             'evidence_concerns': evidence_concerns,
-            'scoring_method': 'config_weighted',
+            'verification_links_count': len(verification_links),
+            'high_quality_links_count': high_quality_count,
+            'llm_verification_analysis': {
+                'llm_verification_used': verification_analysis.get('llm_verification_used', False),
+                'verification_sources_provided': len(verification_links) > 0,
+            },
+            'scoring_method': 'llm_weighted_with_direct_links',
             'weights_used': self.scoring_weights,
             'thresholds_used': {
                 'high_quality': self.high_quality_threshold,
@@ -725,91 +863,70 @@ class EvidenceEvaluatorAgent(BaseAgent):
             }
         }
 
-    def _estimate_logical_score(self, logical_analysis: str, fallacy_report: Dict) -> float:
-        """Estimate logical consistency score from AI analysis and fallacy detection"""
-        
-        # Base score from fallacy count
-        fallacy_count = len(fallacy_report.get('detected_fallacies', []))
-        fallacy_penalty = min(5.0, fallacy_count * 1.5)
-        
-        # AI analysis assessment
-        logical_positive_indicators = [
-            'logical', 'consistent', 'coherent', 'well-reasoned', 'sound argument',
-            'valid reasoning', 'follows logically', 'evidence supports'
-        ]
-        
-        logical_negative_indicators = [
-            'inconsistent', 'contradictory', 'illogical', 'flawed reasoning',
-            'weak argument', 'non sequitur', 'unsupported leap'
-        ]
-        
-        analysis_lower = logical_analysis.lower()
-        positive_count = sum(1 for indicator in logical_positive_indicators if indicator in analysis_lower)
-        negative_count = sum(1 for indicator in logical_negative_indicators if indicator in analysis_lower)
-        
-        ai_score = 5.0 + (positive_count * 0.5) - (negative_count * 0.8)
-        
-        # Combined score
-        combined_score = max(0, min(10, (ai_score - fallacy_penalty)))
-        
-        return combined_score
-
-    def _estimate_evidence_strength(self, evidence_analysis: str) -> float:
-        """Estimate evidence strength from AI analysis"""
-        
-        strength_indicators = [
-            'strong evidence', 'compelling evidence', 'robust evidence',
-            'well-documented', 'thoroughly supported', 'comprehensive data',
-            'multiple sources', 'corroborating evidence', 'primary sources'
-        ]
-        
-        weakness_indicators = [
-            'weak evidence', 'limited evidence', 'insufficient evidence',
-            'poorly supported', 'unsubstantiated', 'lack of evidence',
-            'anecdotal', 'unreliable sources', 'missing documentation'
-        ]
-        
-        analysis_lower = evidence_analysis.lower()
-        strength_count = sum(1 for indicator in strength_indicators if indicator in analysis_lower)
-        weakness_count = sum(1 for indicator in weakness_indicators if indicator in analysis_lower)
-        
-        score = 5.0 + (strength_count * 0.8) - (weakness_count * 0.9)
-        
-        return max(0, min(10, score))
-
-    def _create_evidence_summary(self, extracted_claims: List[Dict[str, Any]],
-                               quality_assessment: Dict, evidence_scores: Dict) -> str:
-        """Create formatted evidence summary for other agents"""
+    def _create_evidence_summary_with_llm_links(self, extracted_claims: List[Dict[str, Any]],
+                                               quality_assessment: Dict, evidence_scores: Dict,
+                                               verification_analysis: Dict) -> str:
+        """Create evidence summary with LLM link awareness"""
         
         if not extracted_claims:
             return "No claims available for evidence evaluation."
         
+        verification_links = verification_analysis.get('verification_links', [])
+        high_quality_count = verification_analysis.get('high_quality_links_count', 0)
+        llm_verification_used = verification_analysis.get('llm_verification_used', False)
+        
         summary_lines = [
             f"EVIDENCE EVALUATION SUMMARY",
-            f"Overall Evidence Score: {evidence_scores['overall_evidence_score']:.1f}/10 ({evidence_scores['quality_level']})",
+            f"Overall Evidence Score: {evidence_scores.get('overall_evidence_score', 5.0):.1f}/10 ({evidence_scores.get('quality_level', 'UNKNOWN')})",
+            f"Verification Links: {len(verification_links)} total ({high_quality_count} high-quality)",
             ""
         ]
+        
+        # ✅ ADD LLM VERIFICATION SUMMARY
+        if llm_verification_used:
+            summary_lines.extend([
+                "🧠 LLM Verification Analysis:",
+                f" • Direct LLM-powered verification sources provided",
+                f" • Sources aligned with credibility assessment methodology",
+                f" • No external dependencies required",
+                ""
+            ])
         
         # Add quality component scores
         summary_lines.extend([
             f"Quality Breakdown:",
-            f" • Source Quality: {evidence_scores['source_quality_score']:.1f}/10",
-            f" • Logical Consistency: {evidence_scores['logical_consistency_score']:.1f}/10",
-            f" • Evidence Completeness: {evidence_scores['evidence_completeness_score']:.1f}/10",
+            f" • Source Quality: {evidence_scores.get('source_quality_score', 5.0):.1f}/10",
+            f" • Logical Consistency: {evidence_scores.get('logical_consistency_score', 5.0):.1f}/10",
+            f" • Evidence Completeness: {evidence_scores.get('evidence_completeness_score', 5.0):.1f}/10",
+            f" • Verification Links Quality: {evidence_scores.get('verification_links_quality_score', 5.0):.1f}/10",
             ""
         ])
         
+        # Add link quality assessment
+        if high_quality_count >= 3:
+            summary_lines.append("✓ Excellent verification link quality - multiple authoritative sources provided")
+        elif high_quality_count >= 1:
+            summary_lines.append("⚠ Good verification link quality - some authoritative sources provided")
+        elif len(verification_links) > 0:
+            summary_lines.append("⚠ Basic verification sources available")
+        else:
+            summary_lines.append("❌ No verification links available")
+        
+        summary_lines.append("")
+        
         # Add reliability factors
-        if evidence_scores['reliability_factors']:
+        reliability_factors = evidence_scores.get('reliability_factors', [])
+        if reliability_factors:
             summary_lines.append("Reliability Factors:")
-            for factor in evidence_scores['reliability_factors']:
+            for factor in reliability_factors:
                 summary_lines.append(f" ✓ {factor}")
             summary_lines.append("")
         
         # Add concerns
-        if evidence_scores['evidence_concerns']:
+        evidence_concerns = evidence_scores.get('evidence_concerns', [])
+        if evidence_concerns:
             summary_lines.append("Evidence Concerns:")
-            for concern in evidence_scores['evidence_concerns']:
+            for concern in evidence_concerns:
                 summary_lines.append(f" ⚠ {concern}")
             summary_lines.append("")
         
@@ -831,15 +948,12 @@ class EvidenceEvaluatorAgent(BaseAgent):
             time_since_last = current_time - self.last_request_time
             if time_since_last < self.rate_limit:
                 time.sleep(self.rate_limit - time_since_last)
-        
         self.last_request_time = time.time()
 
     def _update_evaluation_metrics(self, response_time: float, evidence_score: float, error: bool = False):
-        """Update evaluation-specific metrics with config awareness"""
+        """Update evaluation-specific metrics"""
         self.evaluation_metrics['total_evaluations'] += 1
-        
         if not error:
-            # Update average response time
             total = self.evaluation_metrics['total_evaluations']
             current_avg = self.evaluation_metrics['average_response_time']
             self.evaluation_metrics['average_response_time'] = (
@@ -847,17 +961,10 @@ class EvidenceEvaluatorAgent(BaseAgent):
             )
 
     def get_comprehensive_metrics(self) -> Dict[str, Any]:
-        """
-        📊 Get comprehensive performance metrics with config information
+        """Get comprehensive performance metrics with LLM verification information"""
         
-        Returns:
-            Complete metrics dictionary including config details
-        """
-        
-        # Get base metrics
         base_metrics = self.get_performance_metrics()
         
-        # ✅ ADD CONFIG INFORMATION TO METRICS
         config_metrics = {
             'model_name': self.model_name,
             'temperature': self.temperature,
@@ -866,6 +973,9 @@ class EvidenceEvaluatorAgent(BaseAgent):
             'enable_detailed_analysis': self.enable_detailed_analysis,
             'enable_fallacy_detection': self.enable_fallacy_detection,
             'enable_gap_analysis': self.enable_gap_analysis,
+            'enable_llm_verification': self.enable_llm_verification,
+            'max_verification_links': self.max_verification_links,
+            'link_quality_threshold': self.link_quality_threshold,
             'evidence_types_count': len(self.evidence_types),
             'source_quality_tiers_count': len(self.source_quality_tiers),
             'scoring_weights': self.scoring_weights,
@@ -875,115 +985,52 @@ class EvidenceEvaluatorAgent(BaseAgent):
                 'poor': self.poor_quality_threshold
             },
             'rate_limit_seconds': self.rate_limit,
-            'config_version': '2.0_integrated'
-        }
-        
-        # Get component metrics
-        component_metrics = {
-            'quality_criteria_stats': self.quality_criteria.get_criteria_statistics(),
-            'fallacy_detector_stats': self.fallacy_detector.get_detector_statistics(),
-            'api_calls_made': self.evaluation_metrics['gemini_api_calls']
+            'config_version': '5.0_llm_direct'
         }
         
         return {
             **base_metrics,
             'evaluation_specific_metrics': self.evaluation_metrics,
             'config_metrics': config_metrics,
-            'component_info': component_metrics,
             'agent_type': 'evidence_evaluator',
             'modular_architecture': True,
             'config_integrated': True,
+            'llm_verification_enabled': True,
+            'web_search_enabled': False,
+            'llm_powered': True,
             'prompt_source': 'centralized_config'
         }
 
-    def get_config_summary(self) -> Dict[str, Any]:
-        """Get summary of current configuration"""
-        return {
-            'model_name': self.model_name,
-            'temperature': self.temperature,
-            'max_tokens': self.max_tokens,
-            'evidence_threshold': self.evidence_threshold,
-            'enable_detailed_analysis': self.enable_detailed_analysis,
-            'enable_fallacy_detection': self.enable_fallacy_detection,
-            'enable_gap_analysis': self.enable_gap_analysis,
-            'evidence_types': self.evidence_types,
-            'source_quality_tiers': self.source_quality_tiers,
-            'scoring_weights': self.scoring_weights,
-            'fallacy_types_count': self.fallacy_types_count,
-            'reasoning_quality_threshold': self.reasoning_quality_threshold,
-            'logical_health_threshold': self.logical_health_threshold,
-            'quality_thresholds': {
-                'high': self.high_quality_threshold,
-                'medium': self.medium_quality_threshold,
-                'poor': self.poor_quality_threshold
-            },
-            'rate_limit_seconds': self.rate_limit,
-            'max_retries': self.max_retries,
-            'config_source': 'config_files',
-            'prompt_source': 'centralized_prompts_config'
-        }
-
-# Testing functionality with config integration
+# Testing functionality with LLM verification
 if __name__ == "__main__":
-    """Test the modular evidence evaluator agent with config integration"""
-    print("🧪 Testing Modular Evidence Evaluator Agent with Config Integration")
+    """Test the LLM-powered evidence evaluator agent"""
+    print("🧪 Testing LLM-Powered Evidence Evaluator Agent")
     print("=" * 75)
     
     try:
-        # Initialize agent (will load from config files)
+        # Initialize agent
         agent = EvidenceEvaluatorAgent()
-        print(f"✅ Agent initialized with config: {agent}")
+        print(f"✅ Agent initialized with LLM verification")
         
-        # Show config summary
-        config_summary = agent.get_config_summary()
-        print(f"\n⚙️ Configuration Summary:")
-        for key, value in config_summary.items():
-            if isinstance(value, (list, dict)):
-                if isinstance(value, list):
-                    print(f"  {key}: {len(value)} items")
-                else:
-                    print(f"  {key}: {len(value)} entries" if value else f"  {key}: empty")
-            else:
-                print(f"  {key}: {value}")
-        
-        # Test evidence evaluation
+        # Test with COVID vaccine example
         test_article = """
         According to a study published in the New England Journal of Medicine,
-        researchers at Harvard University found that the new treatment showed
-        85% effectiveness in clinical trials with 2,400 participants.
-        Dr. Sarah Johnson, the lead researcher, stated that the results were
-        statistically significant with a p-value of 0.001. However, the study
-        was funded by the pharmaceutical company that developed the treatment.
+        researchers found that the COVID-19 vaccine is 95% effective in preventing
+        severe illness. Dr. Sarah Johnson from Harvard Medical School confirmed
+        these findings in a recent interview.
         """
         
-        test_claims = [
-            {
-                'text': 'Study published in New England Journal of Medicine showed 85% effectiveness.',
-                'claim_type': 'Research',
-                'priority': 1,
-                'verifiability_score': 8,
-                'source': 'Harvard University researchers'
-            },
-            {
-                'text': 'Clinical trial included 2,400 participants with p-value of 0.001.',
-                'claim_type': 'Statistical',
-                'priority': 1,
-                'verifiability_score': 9,
-                'source': 'Clinical trial data'
-            },
-            {
-                'text': 'Study was funded by pharmaceutical company that developed treatment.',
-                'claim_type': 'Attribution',
-                'priority': 2,
-                'verifiability_score': 6,
-                'source': 'Study disclosure'
-            }
-        ]
+        test_claims = [{
+            'text': 'COVID-19 vaccine is 95% effective in preventing severe illness',
+            'claim_type': 'Medical',
+            'priority': 1,
+            'verifiability_score': 9,
+            'source': 'New England Journal of Medicine study'
+        }]
         
         test_context = {
-            'overall_context_score': 4.2,
-            'risk_level': 'MEDIUM',
-            'bias_counts': {'commercial_bias': 2}
+            'overall_context_score': 2.5,
+            'risk_level': 'LOW'
         }
         
         test_input = {
@@ -993,62 +1040,31 @@ if __name__ == "__main__":
             "include_detailed_analysis": True
         }
         
-        print(f"\n🔍 Testing evidence evaluation...")
-        print(f"Article preview: {test_article[:100]}...")
-        print(f"Claims to evaluate: {len(test_claims)}")
-        print(f"Context score: {test_context['overall_context_score']:.1f}/10")
-        
+        print(f"\n🔍 Testing LLM verification with COVID vaccine effectiveness claim...")
         result = agent.process(test_input)
         
         if result['success']:
             evaluation_data = result['result']
             print(f"✅ Evaluation completed successfully")
-            print(f"  Overall evidence score: {evaluation_data['evidence_scores']['overall_evidence_score']:.1f}/10")
-            print(f"  Quality level: {evaluation_data['evidence_scores']['quality_level']}")
-            print(f"  Source quality: {evaluation_data['evidence_scores']['source_quality_score']:.1f}/10")
-            print(f"  Logical consistency: {evaluation_data['evidence_scores']['logical_consistency_score']:.1f}/10")
-            print(f"  Evidence completeness: {evaluation_data['evidence_scores']['evidence_completeness_score']:.1f}/10")
-            print(f"  Response time: {evaluation_data['metadata']['response_time_seconds']}s")
-            print(f"  Config version: {evaluation_data['metadata']['config_version']}")
-            print(f"  Verification links: {evaluation_data['metadata']['verification_links_found']}")
+            print(f" Overall evidence score: {evaluation_data['evidence_scores']['overall_evidence_score']:.1f}/10")
+            print(f" LLM verification used: {evaluation_data.get('llm_verification_used', False)}")
+            print(f" Verification links provided: {len(evaluation_data.get('verification_links', []))}")
+            print(f" High-quality links: {evaluation_data['evidence_scores'].get('high_quality_links_count', 0)}")
             
-            # Show analysis types generated
-            analyses_generated = []
-            if evaluation_data.get('evidence_analysis'):
-                analyses_generated.append('Evidence Analysis')
-            if evaluation_data.get('source_quality_analysis'):
-                analyses_generated.append('Source Quality')
-            if evaluation_data.get('logical_consistency_analysis'):
-                analyses_generated.append('Logical Consistency')
-            if evaluation_data.get('evidence_gaps_analysis'):
-                analyses_generated.append('Evidence Gaps')
-            
-            print(f"  Analyses generated: {', '.join(analyses_generated)}")
-            
-            # Show reliability factors and concerns
-            reliability_factors = evaluation_data['evidence_scores']['reliability_factors']
-            evidence_concerns = evaluation_data['evidence_scores']['evidence_concerns']
-            
-            print(f"  Reliability factors: {len(reliability_factors)}")
-            print(f"  Evidence concerns: {len(evidence_concerns)}")
-            
+            # Show sample verification links
+            links = evaluation_data.get('verification_links', [])
+            if links:
+                print(f" Sample verification sources:")
+                for i, link in enumerate(links[:3], 1):
+                    print(f" {i}. {link.get('institution', 'Unknown')}")
+                    print(f"    URL: {link.get('url', 'No URL')}")
+                    print(f"    Quality: {link.get('quality_score', 0):.2f}")
         else:
-            print(f"❌ Evaluation failed: {result['error']['message']}")
+            print(f"❌ Evaluation failed: {result.get('error', 'Unknown error')}")
         
-        # Show comprehensive metrics with config info
-        print(f"\n📊 Comprehensive metrics with config info:")
-        metrics = agent.get_comprehensive_metrics()
-        print(f"Agent type: {metrics['agent_type']}")
-        print(f"Config integrated: {metrics['config_integrated']}")
-        print(f"Prompt source: {metrics['prompt_source']}")
-        print(f"High quality evidence found: {metrics['evaluation_specific_metrics']['high_quality_evidence_found']}")
-        print(f"Poor quality evidence found: {metrics['evaluation_specific_metrics']['poor_quality_evidence_found']}")
-        print(f"Verification links parsed: {metrics['evaluation_specific_metrics']['verification_links_parsed']}")
-        
-        print(f"\n✅ Modular evidence evaluator agent with config integration test completed!")
+        print(f"\n✅ LLM-powered evidence evaluator agent test completed!")
         
     except Exception as e:
         print(f"❌ Test failed: {str(e)}")
-        print("Make sure your GEMINI_API_KEY is set in your environment variables")
         import traceback
         traceback.print_exc()

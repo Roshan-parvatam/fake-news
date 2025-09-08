@@ -133,45 +133,27 @@ class ClaimExtractorAgent(BaseAgent):
         self.logger.info(f"📊 Verification: {'Enabled' if self.enable_verification else 'Disabled'}")
     
     def _initialize_gemini_api(self):
-        """
-        🔐 INITIALIZE GEMINI API WITH CONFIG SETTINGS
-        
-        Sets up the connection to Google's Gemini AI service with
-        settings optimized for structured claim extraction using config values.
-        """
+        """Initialize with more permissive safety settings"""
         try:
-            if not self.api_key:
-                raise ValueError("Gemini API key not found in system settings")
-            
-            # Configure Gemini API
             genai.configure(api_key=self.api_key)
             
-            # ✅ USE GENERATION CONFIG FROM CONFIG FILES
-            generation_config = {
-                "temperature": self.temperature,
-                "top_p": self.config.get('top_p', 0.9),
-                "top_k": self.config.get('top_k', 40),
-                "max_output_tokens": self.max_tokens,
-                "response_mime_type": "text/plain",
-            }
+            # ✅ MORE PERMISSIVE SAFETY SETTINGS
+            safety_settings = [
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_ONLY_HIGH"},
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_ONLY_HIGH"}, 
+                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_ONLY_HIGH"},
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"},
+            ]
             
-            # ✅ USE SAFETY SETTINGS FROM CONFIG
-            safety_settings = self.config.get('safety_settings', [
-                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-            ])
-            
-            # Create model instance
             self.model = genai.GenerativeModel(
                 model_name=self.model_name,
-                generation_config=generation_config,
-                safety_settings=safety_settings
+                generation_config={
+                    "temperature": self.temperature,
+                    "max_output_tokens": self.max_tokens,
+                },
+                safety_settings=safety_settings  # ✅ Apply permissive settings
             )
-            
-            self.logger.info("🔐 Gemini API initialized for claim extraction")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize Gemini API: {str(e)}")
             raise

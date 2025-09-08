@@ -13,7 +13,9 @@ import {
   ChevronDown,
   ChevronUp,
   Info,
-  FileText
+  FileText,
+  Search,
+  Shield
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -41,6 +43,8 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({ data }) => {
     console.log('📊 Context scores:', data.context_scores);
     console.log('🔍 Claims:', data.claims);
     console.log('📈 Evidence:', data.evidence);
+    console.log('🔗 Verification links:', data.verification_links); // ✅ Debug verification links
+    console.log('🎯 Contextual sources:', data.contextual_sources); // ✅ Debug contextual sources
   }, [data]);
 
   const getClassificationIcon = () => {
@@ -135,6 +139,8 @@ Explanation: ${data.explanation}`;
       claims: data.claims,
       context_scores: data.context_scores,
       evidence: data.evidence,
+      verification_links: data.verification_links, // ✅ Include verification links
+      contextual_sources: data.contextual_sources, // ✅ Include contextual sources
       recommended_sources: data.recommended_sources,
       explanation: data.explanation
     };
@@ -154,14 +160,19 @@ Explanation: ${data.explanation}`;
     ? data.explanation.substring(0, 200) + '...'
     : data.explanation;
 
-  // Quality validation checks
+  // ✅ UPDATED: Enhanced quality validation checks with verification links awareness
   const qualityIssues: string[] = [];
   
   if (data.context_scores?.credibility < 30) {
     qualityIssues.push("Very low credibility score - requires human review");
   }
   
-  if (!data.evidence?.sources || data.evidence.sources.length === 0) {
+  // ✅ FIXED: Check for evidence sources - prioritize verification_links and contextual_sources
+  const hasVerificationLinks = data.verification_links && data.verification_links.length > 0;
+  const hasContextualSources = data.contextual_sources && data.contextual_sources.length > 0;
+  const hasEvidenceSources = data.evidence?.sources && data.evidence.sources.length > 0;
+  
+  if (!hasVerificationLinks && !hasContextualSources && !hasEvidenceSources) {
     qualityIssues.push("No specific evidence sources provided");
   }
   
@@ -335,6 +346,23 @@ Explanation: ${data.explanation}`;
               </CardTitle>
               <CardDescription>
                 Analysis completed at {new Date(data.timestamp).toLocaleString()}
+                {/* ✅ ADD: Show if enhanced features were used */}
+                {data.analysis_metadata && (
+                  <div className="flex items-center space-x-2 mt-1">
+                    {data.analysis_metadata.llm_scores_used && (
+                      <Badge variant="outline" className="text-xs">
+                        <Shield className="w-3 h-3 mr-1" />
+                        AI-Enhanced
+                      </Badge>
+                    )}
+                    {data.analysis_metadata.specific_links_generated && (
+                      <Badge variant="outline" className="text-xs">
+                        <Search className="w-3 h-3 mr-1" />
+                        Verification Links
+                      </Badge>
+                    )}
+                  </div>
+                )}
               </CardDescription>
             </div>
             <div className="text-right">
@@ -393,6 +421,12 @@ Explanation: ${data.explanation}`;
               This report classifies the article as <span className="font-medium text-foreground">{data.classification}</span>
               {' '}with <span className="font-medium">{data.confidence}% confidence</span>
               {' '}and <span className={cn("font-medium", credibilityStatus.color)}>{credibilityStatus.status} credibility</span> ({data.context_scores?.credibility || 0}%).
+              {/* ✅ ADD: Show verification summary */}
+              {data.verification_links && data.verification_links.length > 0 && (
+                <span className="ml-2 text-green-700 dark:text-green-400">
+                  <strong>{data.verification_links.length} verification sources</strong> found.
+                </span>
+              )}
             </p>
             <p>
               Context scores reflect potential bias and manipulation indicators (higher % means more of that signal). 
@@ -414,7 +448,14 @@ Explanation: ${data.explanation}`;
             Claims ({data.claims?.length || 0})
           </TabsTrigger>
           <TabsTrigger value="context">Context</TabsTrigger>
-          <TabsTrigger value="evidence">Evidence</TabsTrigger>
+          <TabsTrigger value="evidence">
+            Evidence
+            {data.verification_links && data.verification_links.length > 0 && (
+              <Badge variant="secondary" className="ml-1 text-xs">
+                {data.verification_links.length}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="sources">Sources</TabsTrigger>
         </TabsList>
 
@@ -466,10 +507,16 @@ Explanation: ${data.explanation}`;
               <CardTitle>Evidence Quality Assessment</CardTitle>
               <CardDescription>
                 Evaluation of supporting evidence and source quality
+                {data.verification_links && data.verification_links.length > 0 && (
+                  <span className="ml-2 text-green-600">
+                    • {data.verification_links.length} verification sources found
+                  </span>
+                )}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
+              <div className="space-y-6">
+                {/* Overall Quality Assessment */}
                 <div className="flex justify-between items-center">
                   <span className="font-medium">Overall Quality</span>
                   <Badge variant={
@@ -490,7 +537,88 @@ Explanation: ${data.explanation}`;
                   <Progress value={data.evidence?.confidence || 0} className="h-2" />
                 </div>
 
-                {data.evidence?.sources && data.evidence.sources.length > 0 ? (
+                {/* ✅ COMPLETELY FIXED: Verification Links Display */}
+                {data.verification_links && data.verification_links.length > 0 ? (
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="font-medium">Verification Sources</span>
+                      <Badge variant="outline" className="text-xs">
+                        {data.verification_links.length} sources
+                      </Badge>
+                    </div>
+                    <div className="space-y-3">
+                      {data.verification_links.slice(0, 5).map((link, index) => (
+                        <div key={index} className="flex items-start space-x-3 p-4 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors border">
+                          <ExternalLink className="w-5 h-5 text-muted-foreground mt-0.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex-1">
+                                <h4 className="font-medium text-sm text-foreground mb-1">
+                                  {link.institution || link.source_type || 'Unknown Institution'}
+                                </h4>
+                                <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
+                                  <strong>Claim:</strong> {(link.claim || 'No claim specified').substring(0, 100)}
+                                  {link.claim && link.claim.length > 100 && '...'}
+                                </p>
+                                {link.explanation && (
+                                  <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
+                                    <strong>Details:</strong> {link.explanation.substring(0, 120)}
+                                    {link.explanation.length > 120 && '...'}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="text-right ml-4">
+                                <div className="text-xs text-muted-foreground mb-1">
+                                  Quality: {Math.round((link.quality_score || 0.5) * 100)}%
+                                </div>
+                                <Badge variant="outline" className="text-xs">
+                                  {link.source_type || 'Unknown'}
+                                </Badge>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              {link.url && link.url !== '#' ? (
+                                <a 
+                                  href={link.url} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="text-primary hover:text-primary/80 text-xs flex items-center"
+                                >
+                                  <ExternalLink className="w-3 h-3 mr-1" />
+                                  Verify Source
+                                </a>
+                              ) : (
+                                <span className="text-xs text-muted-foreground flex items-center">
+                                  <Info className="w-3 h-3 mr-1" />
+                                  Source reference only
+                                </span>
+                              )}
+                              {link.search_terms && (
+                                <a 
+                                  href={buildSearchUrl(link.search_terms)} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="text-muted-foreground hover:text-foreground text-xs flex items-center"
+                                >
+                                  <Search className="w-3 h-3 mr-1" />
+                                  Search
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      
+                      {data.verification_links.length > 5 && (
+                        <div className="text-center py-2">
+                          <p className="text-xs text-muted-foreground">
+                            +{data.verification_links.length - 5} more verification sources available
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : data.evidence?.sources && data.evidence.sources.length > 0 ? (
                   <div>
                     <span className="font-medium mb-3 block">Supporting Evidence Sources:</span>
                     <div className="space-y-2">
@@ -531,6 +659,9 @@ Explanation: ${data.explanation}`;
                     <p className="text-sm text-muted-foreground">
                       No specific evidence sources were identified for verification.
                     </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      This may indicate the content lacks verifiable claims or sources.
+                    </p>
                   </div>
                 )}
               </div>
@@ -544,77 +675,150 @@ Explanation: ${data.explanation}`;
               <CardTitle>Recommended Verification Sources</CardTitle>
               <CardDescription>
                 Verify this information with these trusted fact-checking resources
+                {/* ✅ ADD: Show contextual sources count */}
+                {data.contextual_sources && data.contextual_sources.length > 0 && (
+                  <span className="ml-2 text-green-600">
+                    • {data.contextual_sources.length} contextual sources found
+                  </span>
+                )}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {data.recommended_sources && data.recommended_sources.length > 0 ? (
-                  data.recommended_sources.map((src: any, index: number) => {
-                    // Support either string URLs or objects with name/url
-                    let displayText = '';
-                    let href: string | null = null;
-                    let description = '';
-                    
-                    if (typeof src === 'string') {
-                      displayText = src;
-                      if (src.startsWith('http')) {
-                        try { 
-                          href = src; 
-                          displayText = new URL(src).hostname.replace('www.', ''); 
-                        } catch (_) { 
-                          href = null; 
-                        }
-                      }
-                    } else if (src && typeof src === 'object') {
-                      const urlCandidate = src.url || src.link || src.href || '';
-                      const nameCandidate = src.name || src.title || src.source || urlCandidate || 'Source';
-                      displayText = nameCandidate;
-                      description = src.description || src.explanation || '';
-                      if (typeof urlCandidate === 'string' && urlCandidate.startsWith('http')) {
-                        try { 
-                          href = urlCandidate; 
-                          if (!displayText.includes('http')) {
-                            displayText = new URL(urlCandidate).hostname.replace('www.', '');
-                          }
-                        } catch (_) { 
-                          href = null; 
-                        }
-                      }
-                    }
-                    
-                    return (
-                      <div key={index} className="flex items-start space-x-3 p-4 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors">
-                        <ExternalLink className="w-5 h-5 text-muted-foreground mt-0.5 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          {href ? (
-                            <a
-                              href={href}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-primary hover:underline font-medium block break-all"
-                            >
-                              {displayText}
-                            </a>
-                          ) : (
-                            <>
-                              <span className="font-medium block">{displayText}</span>
-                              <a
-                                href={buildSearchUrl(displayText)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-sm text-muted-foreground hover:underline"
-                              >
-                                Search for verification →
-                              </a>
-                            </>
-                          )}
-                          {description && (
-                            <p className="text-sm text-muted-foreground mt-1">{description}</p>
-                          )}
+              <div className="space-y-4">
+                {/* ✅ FIXED: Display contextual sources first */}
+                {data.contextual_sources && data.contextual_sources.length > 0 ? (
+                  <div>
+                    <h4 className="font-medium mb-3 text-sm">Contextual Sources:</h4>
+                    <div className="space-y-3">
+                      {data.contextual_sources.slice(0, 6).map((source, index) => (
+                        <div key={index} className="flex items-start space-x-3 p-4 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors border">
+                          <ExternalLink className="w-5 h-5 text-muted-foreground mt-0.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex-1">
+                                <h5 className="font-medium text-sm text-foreground mb-1">
+                                  {source.name?.replace(/\*\*/g, '') || 'Unknown Source'}
+                                </h5>
+                                <p className="text-xs text-muted-foreground mb-2">
+                                  {source.details?.replace(/\*\*/g, '').substring(0, 150) || 'No details available'}
+                                  {source.details && source.details.length > 150 && '...'}
+                                </p>
+                              </div>
+                              <div className="text-right ml-4">
+                                <Badge variant="outline" className="text-xs mb-1">
+                                  {source.type?.replace('contextual_', '').toUpperCase() || 'GENERAL'}
+                                </Badge>
+                                <div className="text-xs text-muted-foreground">
+                                  Score: {source.relevance_score || source.reliability_score || 'N/A'}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              {source.url && source.url !== 'Contact information not specified' && !source.url.includes('not specified') ? (
+                                <a 
+                                  href={source.url.replace(/[\[\]]/g, '')} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="text-primary hover:text-primary/80 text-xs flex items-center"
+                                >
+                                  <ExternalLink className="w-3 h-3 mr-1" />
+                                  Visit Source
+                                </a>
+                              ) : (
+                                <span className="text-xs text-muted-foreground flex items-center">
+                                  <Info className="w-3 h-3 mr-1" />
+                                  Contact via institution
+                                </span>
+                              )}
+                              <span className="text-xs text-muted-foreground">
+                                Relevance: {source.relevance || 'Contextually selected'}
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })
+                      ))}
+                      
+                      {data.contextual_sources.length > 6 && (
+                        <div className="text-center py-2">
+                          <p className="text-xs text-muted-foreground">
+                            +{data.contextual_sources.length - 6} more contextual sources available
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : data.recommended_sources && data.recommended_sources.length > 0 ? (
+                  <div>
+                    <h4 className="font-medium mb-3 text-sm">Recommended Sources:</h4>
+                    <div className="space-y-3">
+                      {data.recommended_sources.map((src: any, index: number) => {
+                        // Support either string URLs or objects with name/url
+                        let displayText = '';
+                        let href: string | null = null;
+                        let description = '';
+                        
+                        if (typeof src === 'string') {
+                          displayText = src;
+                          if (src.startsWith('http')) {
+                            try { 
+                              href = src; 
+                              displayText = new URL(src).hostname.replace('www.', ''); 
+                            } catch (_) { 
+                              href = null; 
+                            }
+                          }
+                        } else if (src && typeof src === 'object') {
+                          const urlCandidate = src.url || src.link || src.href || '';
+                          const nameCandidate = src.name || src.title || src.source || urlCandidate || 'Source';
+                          displayText = nameCandidate;
+                          description = src.description || src.explanation || '';
+                          if (typeof urlCandidate === 'string' && urlCandidate.startsWith('http')) {
+                            try { 
+                              href = urlCandidate; 
+                              if (!displayText.includes('http')) {
+                                displayText = new URL(urlCandidate).hostname.replace('www.', '');
+                              }
+                            } catch (_) { 
+                              href = null; 
+                            }
+                          }
+                        }
+                        
+                        return (
+                          <div key={index} className="flex items-start space-x-3 p-4 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors">
+                            <ExternalLink className="w-5 h-5 text-muted-foreground mt-0.5 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              {href ? (
+                                <a
+                                  href={href}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-primary hover:underline font-medium block break-all"
+                                >
+                                  {displayText}
+                                </a>
+                              ) : (
+                                <>
+                                  <span className="font-medium block">{displayText}</span>
+                                  <a
+                                    href={buildSearchUrl(displayText)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-sm text-muted-foreground hover:underline"
+                                  >
+                                    Search for verification →
+                                  </a>
+                                </>
+                              )}
+                              {description && (
+                                <p className="text-sm text-muted-foreground mt-1">{description}</p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 ) : (
                   <div className="text-center py-8">
                     <Info className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
