@@ -1,54 +1,49 @@
 # agents/evidence_evaluator/criteria.py
-"""
-Evidence Quality Criteria for Evidence Evaluator Agent - Config Enhanced
 
-Enhanced evidence quality assessment with better performance tracking
-and configuration awareness.
+"""
+Evidence Quality Criteria Assessment
+
+Systematic evidence quality assessment system for evaluating news articles
+based on source credibility, evidence strength, verification potential,
+and transparency indicators.
 """
 
-from typing import Dict, List, Any
 import re
-import logging
 import time
+import logging
+from typing import Dict, List, Any
+
 
 class EvidenceQualityCriteria:
     """
-    📊 ENHANCED EVIDENCE QUALITY CRITERIA WITH CONFIG AWARENESS
+    Evidence quality assessment system for news articles.
     
-    This class provides systematic criteria for assessing evidence quality
-    in news articles with enhanced performance tracking.
+    Provides systematic criteria for evaluating evidence quality based on
+    source types, evidence strength, verification potential, and transparency.
     """
-    
+
     def __init__(self, config: Dict[str, Any] = None):
         """
-        Initialize the evidence quality criteria with optional config
+        Initialize evidence quality criteria system.
         
         Args:
-            config: Optional configuration for evidence assessment
+            config: Optional configuration for evidence assessment weights and thresholds
         """
         self.config = config or {}
         self.logger = logging.getLogger(self.__class__.__name__)
         
-        # Initialize quality criteria systems
+        # Initialize assessment criteria
         self.source_quality_indicators = self._initialize_source_quality_indicators()
         self.evidence_strength_indicators = self._initialize_evidence_strength_indicators()
         self.verification_indicators = self._initialize_verification_indicators()
         self.transparency_indicators = self._initialize_transparency_indicators()
         
-        # Performance tracking
-        self.criteria_stats = {
-            'total_assessments': 0,
-            'total_quality_indicators_found': 0,
-            'analysis_time_total': 0.0,
-            'config_applied': bool(config)
-        }
-        
-        self.logger.info(f"✅ EvidenceQualityCriteria initialized with {len(self.source_quality_indicators)} quality categories")
-    
+        # Performance metrics
+        self.assessment_count = 0
+        self.total_processing_time = 0.0
+
     def _initialize_source_quality_indicators(self) -> Dict[str, Dict[str, Any]]:
-        """
-        📊 SOURCE QUALITY INDICATORS DATABASE - Enhanced assessment criteria
-        """
+        """Initialize source quality assessment criteria."""
         return {
             'primary_sources': {
                 'indicators': [
@@ -138,11 +133,9 @@ class EvidenceQualityCriteria:
                 'reliability': 'low'
             }
         }
-    
+
     def _initialize_evidence_strength_indicators(self) -> Dict[str, List[str]]:
-        """
-        📊 EVIDENCE STRENGTH INDICATORS - What makes evidence strong
-        """
+        """Initialize evidence strength assessment criteria."""
         return {
             'strong_evidence': [
                 'peer-reviewed', 'published study', 'clinical trial',
@@ -167,11 +160,9 @@ class EvidenceQualityCriteria:
                 'regression analysis', 'correlation coefficient'
             ]
         }
-    
+
     def _initialize_verification_indicators(self) -> Dict[str, List[str]]:
-        """
-        📊 VERIFICATION INDICATORS - Evidence of fact-checking and verification
-        """
+        """Initialize verification potential assessment criteria."""
         return {
             'high_verification': [
                 'fact-checked', 'verified', 'confirmed', 'substantiated',
@@ -191,11 +182,9 @@ class EvidenceQualityCriteria:
                 'conflicting reports', 'inconsistent with'
             ]
         }
-    
+
     def _initialize_transparency_indicators(self) -> Dict[str, List[str]]:
-        """
-        📊 TRANSPARENCY INDICATORS - Openness about methods and limitations
-        """
+        """Initialize transparency assessment criteria."""
         return {
             'high_transparency': [
                 'methodology', 'limitations', 'conflicts of interest',
@@ -211,47 +200,45 @@ class EvidenceQualityCriteria:
                 'conflicts not mentioned', 'limited information'
             ]
         }
-    
+
     def assess_evidence_quality(self, article_text: str, extracted_claims: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        📊 COMPREHENSIVE EVIDENCE QUALITY ASSESSMENT WITH CONFIG
+        Perform comprehensive evidence quality assessment.
         
-        Systematic assessment of evidence quality using all criteria with performance tracking.
+        Args:
+            article_text: Article content to assess
+            extracted_claims: List of extracted claims with metadata
+            
+        Returns:
+            Dictionary containing quality assessment results
         """
         start_time = time.time()
         text_lower = article_text.lower()
         
-        # Source quality assessment
+        # Perform individual assessments
         source_assessment = self._assess_source_quality(text_lower)
-        
-        # Evidence strength assessment
         strength_assessment = self._assess_evidence_strength(text_lower)
-        
-        # Verification assessment
         verification_assessment = self._assess_verification_level(text_lower)
-        
-        # Transparency assessment
         transparency_assessment = self._assess_transparency(text_lower)
-        
-        # Claims-based assessment
         claims_assessment = self._assess_claims_quality(extracted_claims)
         
-        # Calculate overall scores with config weights
+        # Calculate overall scores
         overall_scores = self._calculate_overall_scores(
             source_assessment, strength_assessment, verification_assessment,
             transparency_assessment, claims_assessment
         )
         
-        # Performance tracking
+        # Update performance metrics
         processing_time = time.time() - start_time
-        total_indicators = (source_assessment['total_indicators'] + 
-                          strength_assessment['total_indicators'] +
-                          verification_assessment['total_indicators'] +
-                          transparency_assessment['total_indicators'])
+        self.assessment_count += 1
+        self.total_processing_time += processing_time
         
-        self.criteria_stats['total_assessments'] += 1
-        self.criteria_stats['total_quality_indicators_found'] += total_indicators
-        self.criteria_stats['analysis_time_total'] += processing_time
+        total_indicators = (
+            source_assessment['total_indicators'] +
+            strength_assessment['total_indicators'] +
+            verification_assessment['total_indicators'] +
+            transparency_assessment['total_indicators']
+        )
         
         return {
             'source_quality_assessment': source_assessment,
@@ -264,12 +251,11 @@ class EvidenceQualityCriteria:
             'completeness_score': overall_scores['completeness_score'],
             'quality_summary': overall_scores['quality_summary'],
             'quality_indicators_found': total_indicators,
-            'analysis_time_ms': round(processing_time * 1000, 2),
-            'config_applied': bool(self.config)
+            'processing_time_ms': round(processing_time * 1000, 2)
         }
-    
+
     def _assess_source_quality(self, text_lower: str) -> Dict[str, Any]:
-        """Assess source quality based on source type indicators"""
+        """Assess source quality based on source type indicators."""
         source_scores = {}
         source_counts = {}
         total_indicators = 0
@@ -277,13 +263,13 @@ class EvidenceQualityCriteria:
         for source_type, info in self.source_quality_indicators.items():
             count = 0
             
-            # Check indicators
+            # Check text indicators
             for indicator in info['indicators']:
                 if indicator in text_lower:
                     count += 1
                     total_indicators += 1
             
-            # Check patterns
+            # Check regex patterns
             for pattern in info['patterns']:
                 matches = re.findall(pattern, text_lower)
                 if matches:
@@ -291,14 +277,17 @@ class EvidenceQualityCriteria:
                     total_indicators += len(matches)
             
             if count > 0:
+                # Calculate score with diminishing returns for excessive counts
                 source_scores[source_type] = info['quality_score'] * min(1.0, count / 3)
                 source_counts[source_type] = count
         
         # Calculate weighted average score
         if source_scores:
             total_weight = sum(source_counts.values())
-            weighted_score = sum(score * source_counts[source_type] 
-                               for source_type, score in source_scores.items()) / total_weight
+            weighted_score = sum(
+                score * source_counts[source_type] 
+                for source_type, score in source_scores.items()
+            ) / total_weight
         else:
             weighted_score = 5.0  # Default neutral score
         
@@ -309,30 +298,26 @@ class EvidenceQualityCriteria:
             'total_indicators': total_indicators,
             'dominant_source_type': max(source_counts, key=source_counts.get) if source_counts else 'none'
         }
-    
+
     def _assess_evidence_strength(self, text_lower: str) -> Dict[str, Any]:
-        """Assess evidence strength based on methodology and rigor indicators"""
+        """Assess evidence strength based on methodology and rigor indicators."""
         strength_counts = {}
         
         for strength_level, indicators in self.evidence_strength_indicators.items():
             count = sum(1 for indicator in indicators if indicator in text_lower)
             strength_counts[strength_level] = count
         
-        # Calculate strength score with config weights
+        # Get weights from config or use defaults
         strength_weights = self.config.get('strength_weights', {
             'strong_evidence': 3.0,
             'moderate_evidence': 1.5,
             'weak_evidence': -1.0,
             'quantitative_indicators': 2.0
-        }) if self.config else {
-            'strong_evidence': 3.0,
-            'moderate_evidence': 1.5,
-            'weak_evidence': -1.0,
-            'quantitative_indicators': 2.0
-        }
+        })
         
+        # Calculate weighted strength score
         weighted_strength = sum(
-            strength_counts.get(level, 0) * weight 
+            strength_counts.get(level, 0) * weight
             for level, weight in strength_weights.items()
         )
         
@@ -345,9 +330,9 @@ class EvidenceQualityCriteria:
             'normalized_score': round(strength_score, 2),
             'total_indicators': sum(strength_counts.values())
         }
-    
+
     def _assess_verification_level(self, text_lower: str) -> Dict[str, Any]:
-        """Assess verification and fact-checking indicators"""
+        """Assess verification and fact-checking indicators."""
         verification_counts = {}
         
         for verification_level, indicators in self.verification_indicators.items():
@@ -363,7 +348,7 @@ class EvidenceQualityCriteria:
         }
         
         weighted_verification = sum(
-            verification_counts.get(level, 0) * weight 
+            verification_counts.get(level, 0) * weight
             for level, weight in verification_weights.items()
         )
         
@@ -375,9 +360,9 @@ class EvidenceQualityCriteria:
             'normalized_score': round(verification_score, 2),
             'total_indicators': sum(verification_counts.values())
         }
-    
+
     def _assess_transparency(self, text_lower: str) -> Dict[str, Any]:
-        """Assess transparency and disclosure indicators"""
+        """Assess transparency and disclosure indicators."""
         transparency_counts = {}
         
         for transparency_level, indicators in self.transparency_indicators.items():
@@ -392,7 +377,7 @@ class EvidenceQualityCriteria:
         }
         
         weighted_transparency = sum(
-            transparency_counts.get(level, 0) * weight 
+            transparency_counts.get(level, 0) * weight
             for level, weight in transparency_weights.items()
         )
         
@@ -404,9 +389,9 @@ class EvidenceQualityCriteria:
             'normalized_score': round(transparency_score, 2),
             'total_indicators': sum(transparency_counts.values())
         }
-    
+
     def _assess_claims_quality(self, extracted_claims: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Assess quality based on extracted claims characteristics"""
+        """Assess quality based on extracted claims characteristics."""
         if not extracted_claims:
             return {
                 'total_claims': 0,
@@ -415,14 +400,15 @@ class EvidenceQualityCriteria:
                 'claims_quality_score': 0
             }
         
-        verifiability_scores = [claim.get('verifiability_score', 5) for claim in extracted_claims]
+        verifiability_scores = [
+            claim.get('verifiability_score', 5) for claim in extracted_claims
+        ]
         average_verifiability = sum(verifiability_scores) / len(verifiability_scores)
         high_verifiability_count = sum(1 for score in verifiability_scores if score >= 7)
         
-        # Claims quality score based on quantity and verifiability
+        # Calculate claims quality score
         quantity_factor = min(1.0, len(extracted_claims) / 5)  # Optimal around 5 claims
         verifiability_factor = average_verifiability / 10
-        
         claims_quality_score = (quantity_factor * 0.3 + verifiability_factor * 0.7) * 10
         
         return {
@@ -436,33 +422,31 @@ class EvidenceQualityCriteria:
                 'low': sum(1 for s in verifiability_scores if s < 4)
             }
         }
-    
-    def _calculate_overall_scores(self, source_assessment: Dict, strength_assessment: Dict,
-                                 verification_assessment: Dict, transparency_assessment: Dict,
-                                 claims_assessment: Dict) -> Dict[str, Any]:
-        """Calculate overall quality scores with config weights"""
-        # Component scores
+
+    def _calculate_overall_scores(self, 
+                                source_assessment: Dict[str, Any],
+                                strength_assessment: Dict[str, Any],
+                                verification_assessment: Dict[str, Any],
+                                transparency_assessment: Dict[str, Any],
+                                claims_assessment: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate overall quality scores with configurable weights."""
+        # Extract component scores
         source_score = source_assessment['weighted_average_score']
         strength_score = strength_assessment['normalized_score']
         verification_score = verification_assessment['normalized_score']
         transparency_score = transparency_assessment['normalized_score']
         claims_score = claims_assessment['claims_quality_score']
         
-        # Overall score weights from config
+        # Get weights from config or use defaults
         overall_weights = self.config.get('overall_weights', {
             'source_quality': 0.3,
             'evidence_strength': 0.25,
             'verification': 0.2,
             'transparency': 0.15,
             'claims_quality': 0.1
-        }) if self.config else {
-            'source_quality': 0.3,
-            'evidence_strength': 0.25,
-            'verification': 0.2,
-            'transparency': 0.15,
-            'claims_quality': 0.1
-        }
+        })
         
+        # Calculate overall score
         overall_score = (
             source_score * overall_weights['source_quality'] +
             strength_score * overall_weights['evidence_strength'] +
@@ -471,7 +455,7 @@ class EvidenceQualityCriteria:
             claims_score * overall_weights['claims_quality']
         )
         
-        # Quality summary
+        # Generate quality summary
         if overall_score >= 8.0:
             quality_summary = "Excellent evidence quality with strong sources and methodology"
         elif overall_score >= 6.5:
@@ -497,38 +481,49 @@ class EvidenceQualityCriteria:
             },
             'weights_used': overall_weights
         }
-    
-    def get_criteria_statistics(self) -> Dict[str, Any]:
-        """Get comprehensive criteria statistics"""
-        base_stats = {
+
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """Get performance metrics for the criteria system."""
+        avg_processing_time = (
+            self.total_processing_time / self.assessment_count 
+            if self.assessment_count > 0 else 0
+        )
+        
+        return {
+            'assessments_completed': self.assessment_count,
+            'total_processing_time_seconds': round(self.total_processing_time, 2),
+            'average_processing_time_ms': round(avg_processing_time * 1000, 2),
+            'criteria_categories': {
+                'source_quality_types': len(self.source_quality_indicators),
+                'evidence_strength_types': len(self.evidence_strength_indicators),
+                'verification_levels': len(self.verification_indicators),
+                'transparency_levels': len(self.transparency_indicators)
+            }
+        }
+
+    def get_assessment_statistics(self) -> Dict[str, Any]:
+        """Get comprehensive assessment statistics."""
+        total_indicators = sum(
+            len(indicators['indicators']) + len(indicators['patterns'])
+            for indicators in self.source_quality_indicators.values()
+        ) + sum(
+            len(indicators) for category in self.evidence_strength_indicators.values()
+            for indicators in [category] if isinstance(category, list)
+        )
+        
+        return {
+            'total_quality_indicators': total_indicators,
             'source_quality_categories': len(self.source_quality_indicators),
             'evidence_strength_categories': len(self.evidence_strength_indicators),
-            'verification_levels': len(self.verification_indicators),
-            'transparency_levels': len(self.transparency_indicators),
-            'total_quality_indicators': sum(
-                len(indicators['indicators']) + len(indicators['patterns'])
-                for indicators in self.source_quality_indicators.values()
-            ) + sum(
-                len(indicators) for category in self.evidence_strength_indicators.values()
-                for indicators in [category] if isinstance(category, list)
-            )
+            'verification_categories': len(self.verification_indicators),
+            'transparency_categories': len(self.transparency_indicators),
+            'config_customization_enabled': bool(self.config)
         }
-        
-        # Add performance stats
-        performance_stats = self.criteria_stats.copy()
-        if performance_stats['total_assessments'] > 0:
-            performance_stats['average_assessment_time_ms'] = round(
-                (performance_stats['analysis_time_total'] / performance_stats['total_assessments']) * 1000, 2
-            )
-            performance_stats['average_indicators_per_assessment'] = round(
-                performance_stats['total_quality_indicators_found'] / performance_stats['total_assessments'], 2
-            )
-        
-        return {**base_stats, 'performance_stats': performance_stats}
 
-# Testing
+
+# Testing functionality
 if __name__ == "__main__":
-    """Test evidence quality criteria with config"""
+    """Test evidence quality criteria system."""
     test_config = {
         'strength_weights': {
             'strong_evidence': 3.5,
@@ -547,7 +542,7 @@ if __name__ == "__main__":
     
     criteria = EvidenceQualityCriteria(test_config)
     
-    test_text = """
+    test_article = """
     According to a peer-reviewed study published in Nature by Dr. Sarah Johnson
     from Harvard University, the clinical trial with 2,400 participants showed
     statistically significant results with p-value < 0.001. The research was
@@ -561,13 +556,11 @@ if __name__ == "__main__":
         {'verifiability_score': 7, 'text': 'Statistically significant with p < 0.001'}
     ]
     
-    assessment = criteria.assess_evidence_quality(test_text, test_claims)
+    assessment = criteria.assess_evidence_quality(test_article, test_claims)
     
-    print(f"Evidence quality assessment results:")
-    print(f"Overall quality score: {assessment['overall_quality_score']:.1f}/10")
-    print(f"Source quality score: {assessment['source_quality_score']:.1f}/10")
-    print(f"Quality summary: {assessment['quality_summary']}")
-    print(f"Quality indicators found: {assessment['quality_indicators_found']}")
-    
-    stats = criteria.get_criteria_statistics()
-    print(f"Criteria database contains {stats['total_quality_indicators']} quality indicators")
+    print(f"Evidence Quality Assessment Results:")
+    print(f"Overall Score: {assessment['overall_quality_score']:.1f}/10")
+    print(f"Source Quality: {assessment['source_quality_score']:.1f}/10")
+    print(f"Quality Summary: {assessment['quality_summary']}")
+    print(f"Processing Time: {assessment['processing_time_ms']:.1f}ms")
+    print(f"Quality Indicators Found: {assessment['quality_indicators_found']}")

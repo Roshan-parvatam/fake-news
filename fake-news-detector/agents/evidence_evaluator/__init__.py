@@ -1,61 +1,118 @@
 # agents/evidence_evaluator/__init__.py
+
 """
-Evidence Evaluator Agent Package with Config Integration
+Evidence Evaluator Agent Module
 
-Enhanced evidence evaluation agent with modular architecture and
-configuration integration for assessing evidence quality, source credibility,
-and logical consistency in news articles.
+Production-ready evidence evaluation system for assessing news article credibility,
+source quality, and logical consistency with specific verification source generation.
 
-Components:
-- EvidenceEvaluatorAgent: Main evidence evaluation agent with config support
-- EvidenceQualityCriteria: Systematic evidence quality assessment system
-- LogicalFallacyDetector: Logical fallacy and reasoning quality detection
+Features:
+- Comprehensive evidence quality assessment
+- Logical fallacy detection and reasoning analysis  
+- LLM-powered verification source generation with URL specificity
+- Configurable scoring weights and thresholds
+- Input/output validation and error handling
+- Production-level monitoring and logging
 """
 
 from .evaluator_agent import EvidenceEvaluatorAgent
 from .criteria import EvidenceQualityCriteria
 from .fallacy_detection import LogicalFallacyDetector
+from .prompts import get_prompt_template, PromptValidator
+from .validators import (
+    validate_evidence_input,
+    validate_url_specificity, 
+    validate_verification_output
+)
+from .exceptions import (
+    EvidenceEvaluatorError,
+    InputValidationError,
+    LLMResponseError,
+    VerificationSourceError,
+    ConfigurationError
+)
 
-# ✅ OPTIONAL: EXPOSE CONFIG FUNCTIONS FOR CONVENIENCE
-try:
-    from config import get_model_config, get_prompt_template, get_settings
-    
-    def get_evidence_evaluator_config():
-        """Convenience function to get evidence evaluator configuration"""
-        return get_model_config('evidence_evaluator')
-    
-    def get_evidence_evaluation_prompts():
-        """Convenience function to get evidence evaluation prompt templates"""
-        return {
-            'evidence_evaluation': get_prompt_template('evidence_evaluator', 'evidence_evaluation'),
-            'source_quality': get_prompt_template('evidence_evaluator', 'source_quality'),
-            'logical_consistency': get_prompt_template('evidence_evaluator', 'logical_consistency'),
-            'evidence_gaps': get_prompt_template('evidence_evaluator', 'evidence_gaps')
-        }
-    
-    def get_system_settings():
-        """Convenience function to get system settings"""
-        return get_settings()
-    
-    # Add to exports
-    __all__ = [
-        'EvidenceEvaluatorAgent',
-        'EvidenceQualityCriteria',
-        'LogicalFallacyDetector',
-        'get_evidence_evaluator_config',
-        'get_evidence_evaluation_prompts',
-        'get_system_settings'
-    ]
-    
-except ImportError:
-    # Config not available, use basic exports
-    __all__ = [
-        'EvidenceEvaluatorAgent',
-        'EvidenceQualityCriteria',
-        'LogicalFallacyDetector'
-    ]
-
-# Version and metadata
+# Module metadata
 __version__ = "2.0.0"
-__description__ = "Evidence evaluator with modular architecture and config integration"
-__config_integrated__ = True
+__description__ = "Evidence evaluation agent with LLM-powered verification and URL specificity"
+__author__ = "Evidence Evaluator Team"
+
+# Main exports
+__all__ = [
+    # Core agent
+    'EvidenceEvaluatorAgent',
+    
+    # Assessment components
+    'EvidenceQualityCriteria',
+    'LogicalFallacyDetector',
+    
+    # Prompt system
+    'get_prompt_template',
+    'PromptValidator',
+    
+    # Validation utilities
+    'validate_evidence_input',
+    'validate_url_specificity',
+    'validate_verification_output',
+    
+    # Exception classes
+    'EvidenceEvaluatorError',
+    'InputValidationError', 
+    'LLMResponseError',
+    'VerificationSourceError',
+    'ConfigurationError',
+    
+    # Module info
+    '__version__',
+    '__description__'
+]
+
+# Convenience functions for quick access
+def create_evidence_evaluator(config=None):
+    """
+    Create a new Evidence Evaluator Agent instance.
+    
+    Args:
+        config: Optional configuration dictionary
+        
+    Returns:
+        EvidenceEvaluatorAgent: Configured agent instance
+    """
+    return EvidenceEvaluatorAgent(config)
+
+def get_module_info():
+    """
+    Get module information and capabilities.
+    
+    Returns:
+        dict: Module metadata and feature information
+    """
+    return {
+        'version': __version__,
+        'description': __description__,
+        'features': [
+            'Evidence quality assessment',
+            'Logical fallacy detection',
+            'LLM-powered verification sources',
+            'URL specificity validation',
+            'Configurable scoring system',
+            'Production-level error handling'
+        ],
+        'components': {
+            'agent': 'EvidenceEvaluatorAgent',
+            'criteria': 'EvidenceQualityCriteria', 
+            'fallacy_detector': 'LogicalFallacyDetector',
+            'validators': 'Input/Output validation',
+            'prompts': 'Industry-standard prompt system'
+        }
+    }
+
+# Module initialization
+def _initialize_module():
+    """Initialize module logging and configuration."""
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Evidence Evaluator Module v{__version__} initialized")
+
+# Initialize on import
+_initialize_module()

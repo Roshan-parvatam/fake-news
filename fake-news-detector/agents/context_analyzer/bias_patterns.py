@@ -1,60 +1,57 @@
 # agents/context_analyzer/bias_patterns.py
-"""
-Bias Pattern Database for Context Analyzer Agent - Config Enhanced
 
-Enhanced bias detection patterns with better performance tracking
-and configuration awareness.
+"""
+Bias Pattern Database
+
+Systematic bias detection patterns for news articles providing comprehensive
+pattern recognition for political, emotional, linguistic, and framing biases.
+Enhanced with performance tracking and configurable detection algorithms.
 """
 
-from typing import Dict, List, Any
 import re
-import logging
 import time
+import logging
+from typing import Dict, List, Any, Tuple
+
 
 class BiasPatternDatabase:
     """
-    📊 ENHANCED BIAS PATTERN DATABASE WITH CONFIG AWARENESS
+    Comprehensive bias pattern database for news article analysis.
     
-    This class manages patterns for detecting different types of bias
-    in news articles with enhanced performance tracking.
+    Provides systematic detection of various bias types including political,
+    emotional, selection, linguistic, and framing biases using pattern matching
+    and keyword analysis.
     """
-    
+
     def __init__(self, config: Dict[str, Any] = None):
         """
-        Initialize the bias pattern database with optional config
+        Initialize bias pattern database.
         
         Args:
-            config: Optional configuration for bias detection
+            config: Optional configuration for bias detection parameters
         """
         self.config = config or {}
         self.logger = logging.getLogger(self.__class__.__name__)
         
-        # Initialize pattern systems
+        # Initialize pattern databases
         self.bias_indicators = self._initialize_bias_indicators()
         self.emotional_keywords = self._initialize_emotional_keywords()
         self.framing_patterns = self._initialize_framing_patterns()
         self.linguistic_patterns = self._initialize_linguistic_patterns()
         
         # Performance tracking
-        self.bias_stats = {
-            'total_analyses': 0,
-            'total_bias_indicators_found': 0,
-            'analysis_time_total': 0.0,
-            'config_applied': bool(config)
-        }
-        
-        self.logger.info(f"✅ BiasPatternDatabase initialized with {len(self.bias_indicators)} bias types")
-    
+        self.analysis_count = 0
+        self.total_processing_time = 0.0
+        self.total_indicators_found = 0
+
     def _initialize_bias_indicators(self) -> Dict[str, List[str]]:
-        """
-        📊 BIAS INDICATOR DATABASE - Enhanced with more patterns
-        """
+        """Initialize comprehensive bias indicator patterns."""
         return {
             'political_left': [
                 'progressive', 'liberal', 'social justice', 'equality', 'diversity',
                 'climate action', 'workers rights', 'universal healthcare', 'gun control',
                 'minimum wage', 'reproductive rights', 'lgbtq', 'immigration reform',
-                'green energy', 'wealth inequality', 'systemic racism', 'defund police'
+                'green energy', 'wealth inequality', 'systemic racism', 'social safety net'
             ],
             'political_right': [
                 'conservative', 'traditional values', 'law and order', 'fiscal responsibility',
@@ -93,11 +90,9 @@ class BiasPatternDatabase:
                 'probably', 'potentially', 'presumably', 'ostensibly'
             ]
         }
-    
+
     def _initialize_emotional_keywords(self) -> Dict[str, List[str]]:
-        """
-        📊 EMOTIONAL KEYWORD DATABASE - Comprehensive emotion detection
-        """
+        """Initialize emotional keyword patterns for manipulation detection."""
         return {
             'fear': [
                 'terror', 'panic', 'dread', 'nightmare', 'horror', 'frightening',
@@ -130,11 +125,9 @@ class BiasPatternDatabase:
                 'prestigious', 'renowned', 'celebrated', 'acclaimed'
             ]
         }
-    
+
     def _initialize_framing_patterns(self) -> Dict[str, List[str]]:
-        """
-        📊 FRAMING PATTERN DATABASE - How stories are structured
-        """
+        """Initialize framing pattern indicators."""
         return {
             'victim_framing': [
                 'victim', 'victimized', 'oppressed', 'persecuted', 'targeted',
@@ -157,11 +150,9 @@ class BiasPatternDatabase:
                 'resolve', 'address', 'tackle', 'handle', 'deal with'
             ]
         }
-    
+
     def _initialize_linguistic_patterns(self) -> Dict[str, List[str]]:
-        """
-        📊 LINGUISTIC PATTERN DATABASE - Language style indicators
-        """
+        """Initialize linguistic style indicators."""
         return {
             'hyperbolic': [
                 'most', 'best', 'worst', 'greatest', 'terrible', 'awful',
@@ -179,35 +170,39 @@ class BiasPatternDatabase:
                 'behind closed doors', 'off the record'
             ]
         }
-    
+
     def analyze_bias_patterns(self, text: str) -> Dict[str, Any]:
         """
-        🔍 ENHANCED BIAS PATTERN ANALYSIS WITH CONFIG
+        Comprehensive bias pattern analysis.
         
-        Comprehensive bias detection using all pattern systems with performance tracking.
+        Args:
+            text: Article text to analyze
+            
+        Returns:
+            Dictionary containing bias analysis results
         """
         start_time = time.time()
         text_lower = text.lower()
         
-        # Bias indicator counting
+        # Analyze bias indicators
         bias_counts = {}
         for bias_type, keywords in self.bias_indicators.items():
             count = sum(1 for keyword in keywords if keyword in text_lower)
             bias_counts[bias_type] = count
         
-        # Emotional keyword counting
+        # Analyze emotional content
         emotional_counts = {}
         for emotion, keywords in self.emotional_keywords.items():
             count = sum(1 for keyword in keywords if keyword in text_lower)
             emotional_counts[emotion] = count
         
-        # Framing pattern counting
+        # Analyze framing patterns
         framing_counts = {}
         for frame_type, keywords in self.framing_patterns.items():
             count = sum(1 for keyword in keywords if keyword in text_lower)
             framing_counts[frame_type] = count
         
-        # Linguistic pattern counting
+        # Analyze linguistic patterns
         linguistic_counts = {}
         for pattern_type, keywords in self.linguistic_patterns.items():
             count = sum(1 for keyword in keywords if keyword in text_lower)
@@ -216,23 +211,23 @@ class BiasPatternDatabase:
         # Find specific indicators
         indicators_found = []
         for bias_type, keywords in self.bias_indicators.items():
-            found = [keyword for keyword in keywords if keyword in text_lower]
-            if found:
-                indicators_found.extend([(bias_type, word) for word in found[:3]])  # Limit per type
+            found_keywords = [keyword for keyword in keywords if keyword in text_lower]
+            if found_keywords:
+                indicators_found.extend([(bias_type, word) for word in found_keywords[:3]])
         
-        # Get emotional profile
-        emotional_profile = self.get_emotional_profile(emotional_counts)
+        # Calculate emotional profile
+        emotional_profile = self._analyze_emotional_profile(emotional_counts)
         
-        # Calculate overall bias intensity with config multiplier
-        multiplier = self.config.get('bias_intensity_multiplier', 0.3) if self.config else 0.3
+        # Calculate bias intensity
         total_bias_indicators = sum(bias_counts.values())
-        bias_intensity = min(10, total_bias_indicators * multiplier)
+        bias_intensity_multiplier = self.config.get('bias_intensity_multiplier', 0.3)
+        bias_intensity = min(10, total_bias_indicators * bias_intensity_multiplier)
         
-        # Performance tracking
+        # Update performance metrics
         processing_time = time.time() - start_time
-        self.bias_stats['total_analyses'] += 1
-        self.bias_stats['total_bias_indicators_found'] += total_bias_indicators
-        self.bias_stats['analysis_time_total'] += processing_time
+        self.analysis_count += 1
+        self.total_processing_time += processing_time
+        self.total_indicators_found += total_bias_indicators
         
         return {
             'bias_counts': bias_counts,
@@ -243,15 +238,18 @@ class BiasPatternDatabase:
             'emotional_profile': emotional_profile,
             'bias_intensity_score': round(bias_intensity, 2),
             'total_bias_indicators': total_bias_indicators,
-            'analysis_time_ms': round(processing_time * 1000, 2),
-            'config_applied': bool(self.config)
+            'processing_time_ms': round(processing_time * 1000, 2)
         }
-    
-    def get_emotional_profile(self, emotional_counts: Dict[str, int]) -> Dict[str, Any]:
+
+    def _analyze_emotional_profile(self, emotional_counts: Dict[str, int]) -> Dict[str, Any]:
         """
-        📊 ENHANCED EMOTIONAL PROFILE ANALYSIS
+        Analyze emotional content profile and manipulation risk.
         
-        Analyze emotional content profile with intensity assessment.
+        Args:
+            emotional_counts: Dictionary of emotion counts
+            
+        Returns:
+            Dictionary with emotional profile analysis
         """
         total_emotional = sum(emotional_counts.values())
         
@@ -259,18 +257,18 @@ class BiasPatternDatabase:
             return {
                 'primary_emotion': 'neutral',
                 'intensity': 'none',
-                'emotional_distribution': emotional_counts,
-                'manipulation_risk': 'low'
+                'manipulation_risk': 'low',
+                'total_emotional_indicators': 0
             }
         
         # Find primary emotion
         primary_emotion = max(emotional_counts, key=emotional_counts.get)
         primary_count = emotional_counts[primary_emotion]
         
-        # Determine intensity level with config thresholds
+        # Determine intensity level
         intensity_thresholds = self.config.get('intensity_thresholds', {
             'low': 2, 'moderate': 5, 'high': 8, 'extreme': 12
-        }) if self.config else {'low': 2, 'moderate': 5, 'high': 8, 'extreme': 12}
+        })
         
         if total_emotional <= intensity_thresholds['low']:
             intensity = 'low'
@@ -297,37 +295,170 @@ class BiasPatternDatabase:
             'primary_emotion_count': primary_count,
             'intensity': intensity,
             'total_emotional_indicators': total_emotional,
-            'emotional_distribution': emotional_counts,
             'manipulation_risk': manipulation_risk,
-            'high_risk_emotion_count': high_risk_count
+            'high_risk_emotion_count': high_risk_count,
+            'emotional_distribution': emotional_counts
         }
-    
-    def get_bias_statistics(self) -> Dict[str, Any]:
-        """Get comprehensive statistics about bias detection"""
-        base_stats = {
-            'bias_indicator_types': len(self.bias_indicators),
-            'total_bias_indicators': sum(len(indicators) for indicators in self.bias_indicators.values()),
-            'emotional_keyword_types': len(self.emotional_keywords),
-            'total_emotional_keywords': sum(len(keywords) for keywords in self.emotional_keywords.values()),
-            'framing_pattern_types': len(self.framing_patterns),
-            'linguistic_pattern_types': len(self.linguistic_patterns)
-        }
-        
-        # Add performance stats
-        performance_stats = self.bias_stats.copy()
-        if performance_stats['total_analyses'] > 0:
-            performance_stats['average_analysis_time_ms'] = round(
-                (performance_stats['analysis_time_total'] / performance_stats['total_analyses']) * 1000, 2
-            )
-            performance_stats['average_indicators_per_analysis'] = round(
-                performance_stats['total_bias_indicators_found'] / performance_stats['total_analyses'], 2
-            )
-        
-        return {**base_stats, 'performance_stats': performance_stats}
 
-# Testing
+    def detect_political_bias(self, text: str) -> Dict[str, Any]:
+        """
+        Focused political bias detection.
+        
+        Args:
+            text: Text to analyze for political bias
+            
+        Returns:
+            Dictionary with political bias analysis
+        """
+        text_lower = text.lower()
+        
+        left_indicators = sum(1 for keyword in self.bias_indicators['political_left'] if keyword in text_lower)
+        right_indicators = sum(1 for keyword in self.bias_indicators['political_right'] if keyword in text_lower)
+        
+        total_political = left_indicators + right_indicators
+        
+        if total_political == 0:
+            return {
+                'political_leaning': 'neutral',
+                'bias_strength': 0,
+                'confidence': 0.0
+            }
+        
+        # Determine political leaning
+        if left_indicators > right_indicators * 2:
+            leaning = 'left'
+            strength = left_indicators
+        elif right_indicators > left_indicators * 2:
+            leaning = 'right' 
+            strength = right_indicators
+        else:
+            leaning = 'mixed'
+            strength = total_political
+        
+        # Calculate confidence based on indicator count and ratio
+        confidence = min(1.0, total_political / 10)
+        
+        return {
+            'political_leaning': leaning,
+            'bias_strength': strength,
+            'left_indicators': left_indicators,
+            'right_indicators': right_indicators,
+            'confidence': round(confidence, 2)
+        }
+
+    def analyze_loaded_language(self, text: str) -> Dict[str, Any]:
+        """
+        Analyze loaded and emotional language usage.
+        
+        Args:
+            text: Text to analyze for loaded language
+            
+        Returns:
+            Dictionary with loaded language analysis
+        """
+        text_lower = text.lower()
+        
+        positive_loaded = sum(1 for word in self.bias_indicators['loaded_positive'] if word in text_lower)
+        negative_loaded = sum(1 for word in self.bias_indicators['loaded_negative'] if word in text_lower)
+        
+        total_loaded = positive_loaded + negative_loaded
+        
+        if total_loaded == 0:
+            return {
+                'loaded_language_detected': False,
+                'emotional_tone': 'neutral',
+                'manipulation_potential': 'low'
+            }
+        
+        # Determine emotional tone
+        if positive_loaded > negative_loaded:
+            tone = 'positive'
+        elif negative_loaded > positive_loaded:
+            tone = 'negative'
+        else:
+            tone = 'mixed'
+        
+        # Assess manipulation potential
+        if total_loaded >= 5:
+            manipulation_potential = 'high'
+        elif total_loaded >= 3:
+            manipulation_potential = 'medium'
+        else:
+            manipulation_potential = 'low'
+        
+        return {
+            'loaded_language_detected': True,
+            'emotional_tone': tone,
+            'positive_loaded_count': positive_loaded,
+            'negative_loaded_count': negative_loaded,
+            'total_loaded_words': total_loaded,
+            'manipulation_potential': manipulation_potential
+        }
+
+    def get_bias_statistics(self) -> Dict[str, Any]:
+        """Get comprehensive bias detection statistics."""
+        avg_processing_time = (
+            self.total_processing_time / self.analysis_count 
+            if self.analysis_count > 0 else 0
+        )
+        
+        avg_indicators_per_analysis = (
+            self.total_indicators_found / self.analysis_count
+            if self.analysis_count > 0 else 0
+        )
+        
+        return {
+            'total_analyses_completed': self.analysis_count,
+            'total_processing_time_seconds': round(self.total_processing_time, 2),
+            'average_processing_time_ms': round(avg_processing_time * 1000, 2),
+            'total_indicators_found': self.total_indicators_found,
+            'average_indicators_per_analysis': round(avg_indicators_per_analysis, 2),
+            'pattern_database_sizes': {
+                'bias_indicator_types': len(self.bias_indicators),
+                'emotional_keyword_types': len(self.emotional_keywords),
+                'framing_pattern_types': len(self.framing_patterns),
+                'linguistic_pattern_types': len(self.linguistic_patterns),
+                'total_bias_indicators': sum(len(indicators) for indicators in self.bias_indicators.values()),
+                'total_emotional_keywords': sum(len(keywords) for keywords in self.emotional_keywords.values())
+            }
+        }
+
+    def validate_patterns(self) -> Dict[str, Any]:
+        """Validate pattern database integrity and completeness."""
+        validation_results = {
+            'valid': True,
+            'issues': [],
+            'warnings': []
+        }
+        
+        # Check for empty pattern lists
+        for category, patterns in self.bias_indicators.items():
+            if not patterns:
+                validation_results['issues'].append(f"Empty pattern list: {category}")
+                validation_results['valid'] = False
+        
+        # Check for duplicate patterns across categories
+        all_patterns = []
+        for patterns in self.bias_indicators.values():
+            all_patterns.extend(patterns)
+        
+        duplicates = set([x for x in all_patterns if all_patterns.count(x) > 1])
+        if duplicates:
+            validation_results['warnings'].append(f"Duplicate patterns found: {list(duplicates)}")
+        
+        # Check pattern quality (length, complexity)
+        short_patterns = [p for patterns in self.bias_indicators.values() for p in patterns if len(p) < 3]
+        if short_patterns:
+            validation_results['warnings'].append(f"Very short patterns: {short_patterns}")
+        
+        return validation_results
+
+
+# Testing functionality
 if __name__ == "__main__":
-    """Test bias pattern database with config"""
+    """Test bias pattern database functionality."""
+    
+    # Initialize database
     test_config = {
         'bias_intensity_multiplier': 0.4,
         'intensity_thresholds': {'low': 3, 'moderate': 6, 'high': 10, 'extreme': 15}
@@ -335,20 +466,44 @@ if __name__ == "__main__":
     
     bias_db = BiasPatternDatabase(test_config)
     
+    # Test analysis
     test_text = """
-    This outrageous scandal exposes the corrupt establishment's lies! 
+    This outrageous scandal exposes the corrupt establishment's lies!
     The radical left-wing media is spreading fear and panic among patriots.
-    Every conservative American must wake up to this devastating crisis.
+    Every conservative American must wake up to this devastating crisis
+    and defend our traditional values against these extremist attacks.
     """
     
+    print("=== BIAS PATTERN ANALYSIS TEST ===")
     result = bias_db.analyze_bias_patterns(test_text)
     
-    print(f"Bias analysis results:")
     print(f"Total bias indicators: {result['total_bias_indicators']}")
     print(f"Bias intensity score: {result['bias_intensity_score']}/10")
     print(f"Primary emotion: {result['emotional_profile']['primary_emotion']}")
     print(f"Emotional intensity: {result['emotional_profile']['intensity']}")
     print(f"Manipulation risk: {result['emotional_profile']['manipulation_risk']}")
     
+    # Test political bias detection
+    political_analysis = bias_db.detect_political_bias(test_text)
+    print(f"\nPolitical leaning: {political_analysis['political_leaning']}")
+    print(f"Bias strength: {political_analysis['bias_strength']}")
+    print(f"Confidence: {political_analysis['confidence']}")
+    
+    # Test loaded language analysis
+    loaded_analysis = bias_db.analyze_loaded_language(test_text)
+    print(f"\nLoaded language detected: {loaded_analysis['loaded_language_detected']}")
+    print(f"Emotional tone: {loaded_analysis['emotional_tone']}")
+    print(f"Manipulation potential: {loaded_analysis['manipulation_potential']}")
+    
+    # Show statistics
     stats = bias_db.get_bias_statistics()
-    print(f"Database contains {stats['total_bias_indicators']} bias indicators")
+    print(f"\n=== STATISTICS ===")
+    print(f"Total analyses: {stats['total_analyses_completed']}")
+    print(f"Average processing time: {stats['average_processing_time_ms']:.1f}ms")
+    print(f"Pattern database size: {stats['pattern_database_sizes']['total_bias_indicators']} indicators")
+    
+    # Validate patterns
+    validation = bias_db.validate_patterns()
+    print(f"\nPattern validation: {'PASSED' if validation['valid'] else 'FAILED'}")
+    if validation['warnings']:
+        print(f"Warnings: {validation['warnings']}")

@@ -1,30 +1,33 @@
 # agents/evidence_evaluator/fallacy_detection.py
-"""
-Logical Fallacy Detection for Evidence Evaluator Agent - Config Enhanced
 
-Enhanced logical fallacy detection with better performance tracking
-and configuration awareness.
+"""
+Logical Fallacy Detection
+
+Detects logical fallacies and reasoning errors in news articles to assess
+argument quality and logical consistency. Provides systematic fallacy
+identification and reasoning quality evaluation.
 """
 
-from typing import Dict, List, Any
 import re
-import logging
 import time
+import logging
+from typing import Dict, List, Any
+
 
 class LogicalFallacyDetector:
     """
-    🚨 ENHANCED LOGICAL FALLACY DETECTOR WITH CONFIG AWARENESS
+    Logical fallacy detection system for news articles.
     
-    This class detects logical fallacies and reasoning errors in news articles
-    with enhanced performance tracking.
+    Identifies common logical fallacies and assesses reasoning quality
+    to evaluate the logical consistency of arguments in news content.
     """
-    
+
     def __init__(self, config: Dict[str, Any] = None):
         """
-        Initialize the logical fallacy detector with optional config
+        Initialize logical fallacy detector.
         
         Args:
-            config: Optional configuration for fallacy detection
+            config: Optional configuration for fallacy detection weights and thresholds
         """
         self.config = config or {}
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -34,20 +37,12 @@ class LogicalFallacyDetector:
         self.reasoning_patterns = self._initialize_reasoning_patterns()
         self.argument_quality_indicators = self._initialize_argument_quality_indicators()
         
-        # Performance tracking
-        self.detector_stats = {
-            'total_detections': 0,
-            'total_fallacies_found': 0,
-            'analysis_time_total': 0.0,
-            'config_applied': bool(config)
-        }
-        
-        self.logger.info(f"✅ LogicalFallacyDetector initialized with {len(self.logical_fallacies)} fallacy types")
-    
+        # Performance metrics
+        self.detection_count = 0
+        self.total_processing_time = 0.0
+
     def _initialize_logical_fallacies(self) -> Dict[str, Dict[str, Any]]:
-        """
-        🚨 LOGICAL FALLACIES DATABASE - Enhanced with more fallacy types
-        """
+        """Initialize logical fallacy detection patterns."""
         return {
             'ad_hominem': {
                 'patterns': [
@@ -190,11 +185,9 @@ class LogicalFallacyDetector:
                 'description': 'Using the conclusion as evidence for the premise'
             }
         }
-    
+
     def _initialize_reasoning_patterns(self) -> Dict[str, List[str]]:
-        """
-        📊 REASONING PATTERN DATABASE - Quality of logical reasoning
-        """
+        """Initialize reasoning quality assessment patterns."""
         return {
             'strong_reasoning': [
                 'evidence shows', 'data indicates', 'research demonstrates',
@@ -217,11 +210,9 @@ class LogicalFallacyDetector:
                 'unbelievable', 'ridiculous', 'absurd', 'insane'
             ]
         }
-    
+
     def _initialize_argument_quality_indicators(self) -> Dict[str, List[str]]:
-        """
-        📊 ARGUMENT QUALITY INDICATORS - Signs of good vs poor arguments
-        """
+        """Initialize argument quality assessment indicators."""
         return {
             'good_argument_indicators': [
                 'evidence suggests', 'data supports', 'research indicates',
@@ -243,17 +234,21 @@ class LogicalFallacyDetector:
                 'totally', 'absolutely', 'definitely', 'certainly'
             ]
         }
-    
+
     def detect_fallacies(self, text: str) -> Dict[str, Any]:
         """
-        🚨 COMPREHENSIVE FALLACY DETECTION WITH CONFIG
+        Detect logical fallacies and assess reasoning quality.
         
-        Detect logical fallacies and assess reasoning quality with performance tracking.
+        Args:
+            text: Text content to analyze for logical fallacies
+            
+        Returns:
+            Dictionary containing fallacy detection results and reasoning assessment
         """
         start_time = time.time()
         text_lower = text.lower()
         
-        # Detect logical fallacies
+        # Detect specific logical fallacies
         detected_fallacies = self._detect_logical_fallacies(text_lower)
         
         # Assess reasoning quality
@@ -267,27 +262,26 @@ class LogicalFallacyDetector:
             detected_fallacies, reasoning_assessment, argument_assessment
         )
         
-        # Performance tracking
-        processing_time = time.time() - start_time
-        total_fallacies = len(detected_fallacies)
+        # Create fallacy summary
+        fallacy_summary = self._create_fallacy_summary(detected_fallacies, logical_health_score)
         
-        self.detector_stats['total_detections'] += 1
-        self.detector_stats['total_fallacies_found'] += total_fallacies
-        self.detector_stats['analysis_time_total'] += processing_time
+        # Update performance metrics
+        processing_time = time.time() - start_time
+        self.detection_count += 1
+        self.total_processing_time += processing_time
         
         return {
             'detected_fallacies': detected_fallacies,
             'reasoning_assessment': reasoning_assessment,
             'argument_assessment': argument_assessment,
             'logical_health_score': logical_health_score,
-            'fallacy_summary': self._create_fallacy_summary(detected_fallacies, logical_health_score),
-            'total_fallacies_detected': total_fallacies,
-            'analysis_time_ms': round(processing_time * 1000, 2),
-            'config_applied': bool(self.config)
+            'fallacy_summary': fallacy_summary,
+            'total_fallacies_detected': len(detected_fallacies),
+            'processing_time_ms': round(processing_time * 1000, 2)
         }
-    
+
     def _detect_logical_fallacies(self, text_lower: str) -> List[Dict[str, Any]]:
-        """Detect specific logical fallacies with enhanced matching"""
+        """Detect specific logical fallacies in text."""
         detected = []
         
         for fallacy_name, fallacy_info in self.logical_fallacies.items():
@@ -309,7 +303,7 @@ class LogicalFallacyDetector:
             
             if matches:
                 # Calculate confidence with config multiplier
-                confidence_multiplier = self.config.get('confidence_multiplier', 0.15) if self.config else 0.15
+                confidence_multiplier = self.config.get('confidence_multiplier', 0.15)
                 confidence = min(1.0, confidence_score * confidence_multiplier)
                 
                 detected.append({
@@ -324,28 +318,24 @@ class LogicalFallacyDetector:
         # Sort by confidence
         detected.sort(key=lambda x: x['confidence'], reverse=True)
         return detected
-    
+
     def _assess_reasoning_quality(self, text_lower: str) -> Dict[str, Any]:
-        """Assess overall quality of reasoning in the text"""
+        """Assess overall quality of reasoning in the text."""
         reasoning_counts = {}
         
         for reasoning_type, indicators in self.reasoning_patterns.items():
             count = sum(1 for indicator in indicators if indicator in text_lower)
             reasoning_counts[reasoning_type] = count
         
-        # Calculate reasoning quality score with config weights
+        # Get reasoning weights from config or use defaults
         reasoning_weights = self.config.get('reasoning_weights', {
             'strong_reasoning': 2.0,
             'weak_reasoning': -1.5,
             'speculative_reasoning': -0.5,
             'emotional_reasoning': -1.0
-        }) if self.config else {
-            'strong_reasoning': 2.0,
-            'weak_reasoning': -1.5,
-            'speculative_reasoning': -0.5,
-            'emotional_reasoning': -1.0
-        }
+        })
         
+        # Calculate weighted reasoning score
         weighted_score = sum(
             reasoning_counts.get(reasoning_type, 0) * weight
             for reasoning_type, weight in reasoning_weights.items()
@@ -360,9 +350,9 @@ class LogicalFallacyDetector:
             'normalized_score': round(reasoning_score, 2),
             'total_reasoning_indicators': sum(reasoning_counts.values())
         }
-    
+
     def _assess_argument_quality(self, text_lower: str) -> Dict[str, Any]:
-        """Assess argument quality based on structure and nuance"""
+        """Assess argument quality based on structure and nuance."""
         quality_counts = {}
         
         for quality_type, indicators in self.argument_quality_indicators.items():
@@ -390,35 +380,35 @@ class LogicalFallacyDetector:
             'normalized_score': round(quality_score, 2),
             'total_quality_indicators': sum(quality_counts.values())
         }
-    
-    def _calculate_logical_health_score(self, detected_fallacies: List[Dict], 
-                                       reasoning_assessment: Dict, argument_assessment: Dict) -> Dict[str, Any]:
-        """Calculate overall logical health score with config weights"""
-        # Fallacy penalty
+
+    def _calculate_logical_health_score(self, 
+                                      detected_fallacies: List[Dict[str, Any]],
+                                      reasoning_assessment: Dict[str, Any],
+                                      argument_assessment: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate overall logical health score."""
+        # Calculate fallacy penalty
         fallacy_penalty = 0
+        severity_multiplier = {'low': 0.5, 'medium': 1.0, 'high': 1.5}
+        
         for fallacy in detected_fallacies:
-            severity_multiplier = {'low': 0.5, 'medium': 1.0, 'high': 1.5}
             penalty = fallacy['confidence'] * severity_multiplier.get(fallacy['severity'], 1.0)
             fallacy_penalty += penalty
         
-        # Component scores
+        # Get component scores
         reasoning_score = reasoning_assessment['normalized_score']
         argument_score = argument_assessment['normalized_score']
         
-        # Base score from reasoning and argument quality
+        # Calculate base score
         base_score = (reasoning_score + argument_score) / 2
         
-        # Apply fallacy penalty with config multiplier
-        penalty_multiplier = self.config.get('fallacy_penalty_multiplier', 1.5) if self.config else 1.5
+        # Apply fallacy penalty
+        penalty_multiplier = self.config.get('fallacy_penalty_multiplier', 1.5)
         final_score = max(0, base_score - (fallacy_penalty * penalty_multiplier))
         
-        # Determine logical health level
+        # Determine health level thresholds
         health_thresholds = self.config.get('health_thresholds', {
-            'excellent': 8.0,
-            'good': 6.0,
-            'fair': 4.0,
-            'poor': 2.0
-        }) if self.config else {'excellent': 8.0, 'good': 6.0, 'fair': 4.0, 'poor': 2.0}
+            'excellent': 8.0, 'good': 6.0, 'fair': 4.0, 'poor': 2.0
+        })
         
         if final_score >= health_thresholds['excellent']:
             health_level = "EXCELLENT"
@@ -440,61 +430,79 @@ class LogicalFallacyDetector:
             'fallacy_count': len(detected_fallacies),
             'high_severity_fallacies': len([f for f in detected_fallacies if f['severity'] == 'high'])
         }
-    
-    def _create_fallacy_summary(self, detected_fallacies: List[Dict], logical_health_score: Dict) -> str:
-        """Create formatted fallacy summary"""
+
+    def _create_fallacy_summary(self, 
+                              detected_fallacies: List[Dict[str, Any]], 
+                              logical_health_score: Dict[str, Any]) -> str:
+        """Create formatted fallacy summary."""
         if not detected_fallacies:
             return f"No logical fallacies detected. Logical health: {logical_health_score['health_level']} ({logical_health_score['logical_health_score']:.1f}/10)"
         
         summary_lines = [
-            f"LOGICAL FALLACY ANALYSIS",
+            "LOGICAL FALLACY ANALYSIS",
             f"Total Fallacies: {len(detected_fallacies)}",
             f"Logical Health: {logical_health_score['health_level']} ({logical_health_score['logical_health_score']:.1f}/10)",
             ""
         ]
         
-        # Add fallacy details
-        for i, fallacy in enumerate(detected_fallacies[:5], 1):  # Limit to top 5
-            severity_emoji = "🔴" if fallacy['severity'] == 'high' else "🟡" if fallacy['severity'] == 'medium' else "🟢"
+        # Add fallacy details (limit to top 5)
+        for i, fallacy in enumerate(detected_fallacies[:5], 1):
+            severity_indicator = {
+                'high': "High Risk",
+                'medium': "Medium Risk", 
+                'low': "Low Risk"
+            }.get(fallacy['severity'], "Unknown")
+            
             summary_lines.extend([
-                f"Fallacy {i}: {severity_emoji} {fallacy['fallacy_type'].replace('_', ' ').title()}",
+                f"Fallacy {i}: {fallacy['fallacy_type'].replace('_', ' ').title()}",
+                f"  Severity: {severity_indicator}",
                 f"  Confidence: {fallacy['confidence']:.2f}",
                 f"  Description: {fallacy['description']}",
                 ""
             ])
         
         if len(detected_fallacies) > 5:
-            summary_lines.append(f"... and {len(detected_fallacies) - 5} more fallacies")
+            summary_lines.append(f"... and {len(detected_fallacies) - 5} more fallacies detected")
         
         return "\n".join(summary_lines)
-    
-    def get_detector_statistics(self) -> Dict[str, Any]:
-        """Get comprehensive detector statistics"""
-        base_stats = {
-            'fallacy_types_count': len(self.logical_fallacies),
-            'reasoning_pattern_types': len(self.reasoning_patterns),
-            'argument_quality_categories': len(self.argument_quality_indicators),
-            'total_detection_patterns': sum(
-                len(fallacy_info['patterns']) + len(fallacy_info['indicators'])
-                for fallacy_info in self.logical_fallacies.values()
-            )
-        }
-        
-        # Add performance stats
-        performance_stats = self.detector_stats.copy()
-        if performance_stats['total_detections'] > 0:
-            performance_stats['average_detection_time_ms'] = round(
-                (performance_stats['analysis_time_total'] / performance_stats['total_detections']) * 1000, 2
-            )
-            performance_stats['average_fallacies_per_detection'] = round(
-                performance_stats['total_fallacies_found'] / performance_stats['total_detections'], 2
-            )
-        
-        return {**base_stats, 'performance_stats': performance_stats}
 
-# Testing
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """Get performance metrics for the fallacy detector."""
+        avg_processing_time = (
+            self.total_processing_time / self.detection_count 
+            if self.detection_count > 0 else 0
+        )
+        
+        return {
+            'detections_completed': self.detection_count,
+            'total_processing_time_seconds': round(self.total_processing_time, 2),
+            'average_processing_time_ms': round(avg_processing_time * 1000, 2),
+            'fallacy_categories': {
+                'total_fallacy_types': len(self.logical_fallacies),
+                'reasoning_pattern_types': len(self.reasoning_patterns),
+                'argument_quality_categories': len(self.argument_quality_indicators)
+            }
+        }
+
+    def get_detector_statistics(self) -> Dict[str, Any]:
+        """Get comprehensive detector statistics."""
+        total_detection_patterns = sum(
+            len(fallacy_info['patterns']) + len(fallacy_info['indicators'])
+            for fallacy_info in self.logical_fallacies.values()
+        )
+        
+        return {
+            'fallacy_types_count': len(self.logical_fallacies),
+            'total_detection_patterns': total_detection_patterns,
+            'reasoning_pattern_count': sum(len(patterns) for patterns in self.reasoning_patterns.values()),
+            'argument_quality_indicators_count': sum(len(indicators) for indicators in self.argument_quality_indicators.values()),
+            'config_customization_enabled': bool(self.config)
+        }
+
+
+# Testing functionality
 if __name__ == "__main__":
-    """Test logical fallacy detector with config"""
+    """Test logical fallacy detector."""
     test_config = {
         'confidence_multiplier': 0.2,
         'reasoning_weights': {
@@ -504,7 +512,9 @@ if __name__ == "__main__":
             'emotional_reasoning': -1.5
         },
         'fallacy_penalty_multiplier': 2.0,
-        'health_thresholds': {'excellent': 8.5, 'good': 6.5, 'fair': 4.5, 'poor': 2.5}
+        'health_thresholds': {
+            'excellent': 8.5, 'good': 6.5, 'fair': 4.5, 'poor': 2.5
+        }
     }
     
     detector = LogicalFallacyDetector(test_config)
@@ -519,15 +529,13 @@ if __name__ == "__main__":
     
     results = detector.detect_fallacies(test_text)
     
-    print(f"Fallacy detection results:")
+    print("Fallacy Detection Results:")
     print(f"Total fallacies detected: {results['total_fallacies_detected']}")
     print(f"Logical health score: {results['logical_health_score']['logical_health_score']:.1f}/10")
     print(f"Health level: {results['logical_health_score']['health_level']}")
     print(f"High severity fallacies: {results['logical_health_score']['high_severity_fallacies']}")
+    print(f"Processing time: {results['processing_time_ms']:.1f}ms")
     
-    print(f"\nDetected fallacies:")
+    print("\nDetected fallacies:")
     for fallacy in results['detected_fallacies']:
         print(f"  - {fallacy['fallacy_type']}: {fallacy['confidence']:.2f} confidence ({fallacy['severity']} severity)")
-    
-    stats = detector.get_detector_statistics()
-    print(f"\nDetector has {stats['total_detection_patterns']} detection patterns")
