@@ -1,720 +1,1138 @@
 # agents/evidence_evaluator/prompts.py
 
 """
-Evidence Evaluator Prompts Module
+Evidence Evaluator Prompts Module - Production Ready
 
-Industry-standard prompt templates for evidence evaluation with structured output
-and URL specificity enforcement. Uses Chain-of-Thought and Few-Shot patterns.
+Enhanced prompt templates with state-of-the-art prompt engineering techniques,
+fallback prompts, validation, and production-level error handling.
 """
 
-from typing import Dict, List, Any
+import re
+import json
+import logging
+from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
+
+from .exceptions import PromptGenerationError, raise_prompt_generation_error
+
 
 @dataclass
 class PromptResponse:
-    """Structured response container for prompt outputs."""
+    """Structured response container for prompt outputs with metadata."""
     content: str
     metadata: Dict[str, Any]
+    prompt_type: str
+    tokens_used: Optional[int] = None
+    generation_time: Optional[float] = None
+
 
 class EvidenceVerificationPrompts:
-    """Evidence verification prompts with URL specificity enforcement."""
-    
-    @staticmethod
-    def generate_verification_sources(article_text: str, claims: List[Dict[str, Any]]) -> str:
-        """
-        Generate specific verification sources with actionable URLs.
-        Uses Chain-of-Thought and structured output patterns.
-        """
-        claims_text = "\n".join([f"{i+1}. {claim.get('text', '')}" for i, claim in enumerate(claims[:5])])
-        
-        return f"""You are a fact-checking specialist providing SPECIFIC verification sources for exact claims.
+    """
+    Enhanced evidence verification prompts with Chain-of-Thought reasoning,
+    Few-Shot examples, and robust fallback handling.
+    """
 
-ARTICLE CONTENT: {article_text[:1200]}
+    @staticmethod
+    def generate_verification_sources(article_text: str, 
+                                    claims: List[Dict[str, Any]], 
+                                    session_id: str = None) -> str:
+        """
+        Generate specific verification sources using advanced prompt engineering.
+        
+        Uses Chain-of-Thought reasoning, Few-Shot examples, and structured output.
+        
+        Args:
+            article_text: Article content for verification
+            claims: Claims to verify with metadata
+            session_id: Optional session ID for tracking
+        
+        Returns:
+            Formatted prompt string for LLM processing
+        
+        Raises:
+            PromptGenerationError: If prompt generation fails
+        """
+        logger = logging.getLogger(f"{__name__}.EvidenceVerificationPrompts")
+        
+        try:
+            # Validate inputs
+            if not article_text or not isinstance(article_text, str):
+                raise_prompt_generation_error(
+                    'verification_sources', 
+                    "Article text must be non-empty string",
+                    {'article_text_type': type(article_text).__name__},
+                    session_id
+                )
+            
+            if not claims or not isinstance(claims, list):
+                raise_prompt_generation_error(
+                    'verification_sources',
+                    "Claims must be non-empty list", 
+                    {'claims_type': type(claims).__name__},
+                    session_id
+                )
+            
+            # Prepare claims with safety checks
+            formatted_claims = []
+            for i, claim in enumerate(claims[:5]):  # Limit to 5 claims for focus
+                if isinstance(claim, dict) and claim.get('text'):
+                    claim_text = str(claim['text']).strip()
+                    if claim_text:
+                        formatted_claims.append(f"{i+1}. {claim_text}")
+            
+            if not formatted_claims:
+                raise_prompt_generation_error(
+                    'verification_sources',
+                    "No valid claims found for verification",
+                    {'claims_count': len(claims)},
+                    session_id
+                )
+            
+            claims_text = "\n".join(formatted_claims)
+            article_excerpt = article_text[:1200].strip()
+            
+            # Enhanced prompt with CoT and Few-Shot learning
+            prompt = f"""You are Dr. Sarah Chen, a senior fact-checking specialist with 15+ years of experience in investigative journalism and academic research verification. You have worked with Reuters, Associated Press, and the International Fact-Checking Network.
+
+<thinking>
+My task is to generate exactly 5 highly specific, actionable verification sources for the given claims. For each claim, I need to:
+
+1. IDENTIFY: What is the core factual assertion that needs verification?
+2. CATEGORIZE: What type of evidence would best verify this claim? (official data, research study, expert statement, etc.)
+3. SOURCE: Which authoritative institution would be the most credible source for this type of claim?
+4. SPECIFY: What would be the exact URL path structure for finding this information?
+5. ASSESS: How confident am I that this source exists and would contain the needed information?
+
+I must avoid generic homepage URLs and instead provide specific, deep-linked URLs that would directly address each claim.
+</thinking>
+
+ARTICLE EXCERPT:
+{article_excerpt}
 
 CLAIMS TO VERIFY:
 {claims_text}
 
-TASK: Provide exactly 5 specific verification sources using this EXACT format:
+EXAMPLES OF EXCELLENT VERIFICATION SOURCES:
+
+Example 1:
+**CLAIM**: "FDA approved Pfizer COVID-19 vaccine for adults in August 2021"
+**INSTITUTION**: U.S. Food and Drug Administration
+**SPECIFIC_URL**: https://www.fda.gov/news-events/press-announcements/fda-approves-first-covid-19-vaccine
+**VERIFICATION_TYPE**: official_data
+**SEARCH_STRATEGY**: "Pfizer COVID-19 vaccine approval" site:fda.gov
+**CONFIDENCE**: 0.95
+
+Example 2:
+**CLAIM**: "Harvard study shows 40% reduction in cardiovascular events"
+**INSTITUTION**: Harvard T.H. Chan School of Public Health
+**SPECIFIC_URL**: https://www.hsph.harvard.edu/news/press-releases/2023/cardiovascular-study-results/
+**VERIFICATION_TYPE**: research_study
+**SEARCH_STRATEGY**: "cardiovascular reduction study" site:hsph.harvard.edu
+**CONFIDENCE**: 0.85
+
+Now provide exactly 5 verification sources using this EXACT format:
 
 ## VERIFICATION SOURCE 1
 **CLAIM**: "Exact quote from article being verified"
-**INSTITUTION**: Name of authoritative organization
-**SPECIFIC_URL**: https://domain.org/exact-page-that-verifies-this-claim
+**INSTITUTION**: Name of most authoritative organization for this claim type
+**SPECIFIC_URL**: https://domain.org/exact-path/to/relevant-content
 **VERIFICATION_TYPE**: primary_source|expert_analysis|official_data|research_study
-**SEARCH_STRATEGY**: "exact keywords" site:domain.org
+**SEARCH_STRATEGY**: "specific keywords" site:domain.org
 **CONFIDENCE**: 0.X (decimal from 0.1 to 1.0)
 
 ## VERIFICATION SOURCE 2
-[Continue same format...]
+[Continue same format for all 5 sources...]
 
 CRITICAL REQUIREMENTS:
-1. URLs must be SPECIFIC to the claim, not homepage
-2. Each URL should directly address the exact claim
-3. Use authoritative domains: .gov, .edu, major institutions
-4. Provide specific search terms to find the verification
-5. Match institution credibility to claim type
+1. URLs must be SPECIFIC pages, never homepages (❌ https://cdc.gov ✅ https://cdc.gov/vaccines/covid-19/clinical-considerations/managing-anaphylaxis.html)
+2. Each institution must be the MOST AUTHORITATIVE source for that specific claim type
+3. Confidence scores must reflect realistic likelihood of finding the information at that exact URL
+4. Search strategies must be specific enough to find the exact information needed
+5. Verification types must match the nature of the evidence being sought
 
-EXAMPLES OF GOOD URLS:
-- https://www.cdc.gov/vaccines/covid-19/clinical-considerations/managing-anaphylaxis.html
-- https://pubmed.ncbi.nlm.nih.gov/34289274/
-- https://www.fda.gov/news-events/press-announcements/fda-approves-first-covid-19-vaccine
+Generate exactly 5 sources now:"""
 
-EXAMPLES OF BAD URLS (DO NOT USE):
-- https://www.cdc.gov/ (too general)
-- https://pubmed.ncbi.nlm.nih.gov/ (homepage only)
-- https://www.fda.gov/ (not specific)
-
-OUTPUT: Provide exactly 5 sources in the specified format."""
+            logger.info(f"Generated verification sources prompt", 
+                       extra={
+                           'session_id': session_id,
+                           'article_length': len(article_text),
+                           'claims_count': len(formatted_claims),
+                           'prompt_length': len(prompt)
+                       })
+            
+            return prompt
+            
+        except PromptGenerationError:
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error in verification sources prompt generation: {str(e)}", 
+                        extra={'session_id': session_id})
+            raise_prompt_generation_error(
+                'verification_sources',
+                f"Prompt generation failed: {str(e)}",
+                {'error_type': type(e).__name__},
+                session_id
+            )
 
     @staticmethod
-    def assess_source_quality(article_text: str, sources: List[str]) -> str:
-        """Assess source quality with structured evaluation."""
-        sources_list = "\n".join([f"- {source}" for source in sources[:10]])
+    def generate_verification_sources_fallback(article_text: str, 
+                                             claims: List[Dict[str, Any]], 
+                                             session_id: str = None) -> str:
+        """
+        Fallback prompt for verification sources when main prompt fails.
         
-        return f"""Analyze source quality using systematic evaluation framework.
+        Simplified but reliable prompt for basic verification source generation.
+        """
+        logger = logging.getLogger(f"{__name__}.EvidenceVerificationPrompts")
+        logger.warning(f"Using fallback verification sources prompt", 
+                      extra={'session_id': session_id})
+        
+        try:
+            # Basic validation and preparation
+            claims_text = "No specific claims provided"
+            if claims and isinstance(claims, list):
+                valid_claims = []
+                for i, claim in enumerate(claims[:3]):  # Limit to 3 for fallback
+                    if isinstance(claim, dict) and claim.get('text'):
+                        valid_claims.append(f"- {claim['text']}")
+                if valid_claims:
+                    claims_text = "\n".join(valid_claims)
+            
+            article_excerpt = str(article_text)[:800] if article_text else "No article provided"
+            
+            return f"""Generate 3 verification sources for fact-checking the following content.
 
-CONTENT: {article_text[:800]}
+CONTENT: {article_excerpt}
+
+CLAIMS: 
+{claims_text}
+
+For each claim, provide:
+1. Institution: Authoritative source name
+2. URL: Specific verification URL (not homepage)
+3. Confidence: 0.1 to 1.0
+
+Format each as:
+Source 1: [Institution] - [URL] - Confidence: [0.X]
+Source 2: [Institution] - [URL] - Confidence: [0.X]
+Source 3: [Institution] - [URL] - Confidence: [0.X]"""
+
+        except Exception as e:
+            logger.error(f"Fallback prompt generation failed: {str(e)}", 
+                        extra={'session_id': session_id})
+            return "Generate verification sources for the provided content."
+
+    @staticmethod
+    def assess_source_quality(article_text: str, 
+                            sources: List[str], 
+                            session_id: str = None) -> str:
+        """
+        Enhanced source quality assessment prompt with systematic evaluation framework.
+        """
+        logger = logging.getLogger(f"{__name__}.EvidenceVerificationPrompts")
+        
+        try:
+            if not sources:
+                sources = ["No sources provided"]
+            
+            sources_list = "\n".join([f"• {source}" for source in sources[:10]])
+            article_excerpt = str(article_text)[:800] if article_text else "No content provided"
+            
+            prompt = f"""You are Prof. Michael Rodriguez, Director of the Digital Media Literacy Institute and expert in source credibility assessment with 20+ years of experience evaluating information sources across academic, journalistic, and policy contexts.
+
+<evaluation_framework>
+Your systematic evaluation will assess sources across four key dimensions:
+
+1. INSTITUTIONAL AUTHORITY: Government agencies > Academic institutions > Professional organizations > Established media
+2. DOMAIN EXPERTISE: Direct subject matter relevance and recognized specialization
+3. TRANSPARENCY: Methodology disclosure, funding sources, bias acknowledgment, correction policies
+4. VERIFICATION POTENTIAL: Primary vs secondary sources, independent corroboration availability
+</evaluation_framework>
+
+CONTENT BEING EVALUATED:
+{article_excerpt}
 
 IDENTIFIED SOURCES:
 {sources_list}
 
-EVALUATION FRAMEWORK:
+TASK: Conduct systematic source quality analysis using this structure:
 
-## AUTHORITY ASSESSMENT
+## AUTHORITY ASSESSMENT (Weight: 35%)
 For each source, evaluate:
-- **Institutional Credibility**: Government/Academic/Professional/Independent
-- **Domain Expertise**: Directly relevant to claims
-- **Recognition**: Peer-acknowledged authority
-- **Track Record**: History of accurate information
+- **Institutional Credibility**: Rate government/academic/professional/independent (1-10)
+- **Domain Expertise**: Relevance to specific claims (1-10)
+- **Recognition Factor**: Peer acknowledgment and reputation (1-10)
+- **Track Record**: Historical accuracy and reliability (1-10)
 
-## TRANSPARENCY EVALUATION  
-- **Methodology Disclosure**: How information was gathered
-- **Funding Sources**: Financial backing transparency  
-- **Bias Indicators**: Potential conflicts of interest
-- **Correction Policy**: How errors are handled
+## TRANSPARENCY EVALUATION (Weight: 25%)
+Assess each source for:
+- **Methodology Disclosure**: How information was gathered and validated
+- **Funding Transparency**: Financial backing and potential conflicts
+- **Bias Indicators**: Acknowledged limitations and perspectives
+- **Correction Policy**: How errors are handled and communicated
 
-## VERIFICATION POTENTIAL
-- **Primary vs Secondary**: Original vs. reported information
-- **Accessibility**: Can readers verify claims independently
-- **Corroboration**: Multiple independent sources available
-- **Recency**: Information currency and relevance
+## VERIFICATION POTENTIAL (Weight: 25%)
+Analyze:
+- **Primary vs Secondary**: Original research vs reported information
+- **Independent Access**: Can readers verify claims independently?
+- **Corroboration**: Are multiple independent sources available?
+- **Currency**: Information recency and ongoing relevance
 
-OUTPUT FORMAT:
-**OVERALL SOURCE QUALITY**: X/10
-**STRONGEST SOURCES**: [List top 3 with scores]
-**WEAKEST SOURCES**: [List concerning sources with reasons]
-**VERIFICATION RECOMMENDATIONS**: [Specific steps for readers]
-**MISSING SOURCE TYPES**: [What additional sources needed]"""
+## COMPLETENESS CHECK (Weight: 15%)
+Evaluate:
+- **Coverage Gaps**: What perspectives or evidence types are missing?
+- **Source Diversity**: Geographic, institutional, and methodological variety
+- **Stakeholder Representation**: Whose voices are included/excluded?
+
+OUTPUT STRUCTURE:
+**OVERALL SOURCE QUALITY SCORE**: X/10
+
+**STRONGEST SOURCES** (Top 3 with individual scores):
+1. [Source name]: X/10 - [Brief justification]
+2. [Source name]: X/10 - [Brief justification]
+3. [Source name]: X/10 - [Brief justification]
+
+**SIGNIFICANT CONCERNS** (Issues to address):
+• [Specific concern]: [Impact on credibility]
+• [Specific concern]: [Impact on credibility]
+
+**VERIFICATION STRATEGY** (For readers):
+• [Step 1]: [Specific action to verify information]
+• [Step 2]: [Additional verification method]
+• [Step 3]: [Cross-reference approach]
+
+**MISSING SOURCE TYPES** (To strengthen analysis):
+• [Type]: [Why needed and where to find]
+• [Type]: [Why needed and where to find]"""
+
+            logger.info(f"Generated source quality assessment prompt", 
+                       extra={
+                           'session_id': session_id,
+                           'sources_count': len(sources),
+                           'article_length': len(article_text) if article_text else 0
+                       })
+            
+            return prompt
+            
+        except Exception as e:
+            logger.error(f"Source quality prompt generation failed: {str(e)}", 
+                        extra={'session_id': session_id})
+            return EvidenceVerificationPrompts.assess_source_quality_fallback(sources, session_id)
+
+    @staticmethod
+    def assess_source_quality_fallback(sources: List[str], session_id: str = None) -> str:
+        """Fallback source quality assessment prompt."""
+        logger = logging.getLogger(f"{__name__}.EvidenceVerificationPrompts")
+        logger.warning(f"Using fallback source quality prompt", extra={'session_id': session_id})
+        
+        sources_text = "No sources provided"
+        if sources:
+            sources_text = "\n".join([f"- {source}" for source in sources[:5]])
+        
+        return f"""Evaluate the quality and credibility of these sources:
+
+{sources_text}
+
+Rate each source 1-10 and explain:
+1. Authority level (government, academic, media, etc.)
+2. Relevance to claims being verified
+3. Potential bias or limitations
+4. Overall reliability assessment
+
+Provide summary with overall score out of 10."""
+
 
 class LogicalConsistencyPrompts:
-    """Prompts for logical consistency and reasoning quality analysis."""
-    
-    @staticmethod
-    def analyze_logical_consistency(article_text: str, claims: List[str]) -> str:
-        """Analyze logical consistency using structured reasoning framework."""
-        key_claims = "\n".join([f"• {claim}" for claim in claims[:6]])
-        
-        return f"""Conduct systematic logical consistency analysis.
+    """Enhanced prompts for logical consistency and reasoning quality analysis."""
 
-CONTENT: {article_text[:1000]}
+    @staticmethod
+    def analyze_logical_consistency(article_text: str, 
+                                  claims: List[str], 
+                                  session_id: str = None) -> str:
+        """
+        Advanced logical consistency analysis with systematic reasoning framework.
+        """
+        logger = logging.getLogger(f"{__name__}.LogicalConsistencyPrompts")
+        
+        try:
+            if not claims:
+                claims = ["No claims provided"]
+            
+            key_claims = "\n".join([f"• {claim}" for claim in claims[:6]])
+            article_excerpt = str(article_text)[:1000] if article_text else "No content provided"
+            
+            prompt = f"""You are Dr. Elena Vasquez, Professor of Logic and Critical Thinking at MIT with expertise in argument analysis, formal logic, and reasoning assessment. You've authored 3 books on logical fallacies and have 25+ years of experience evaluating argument quality.
+
+<reasoning_framework>
+Your systematic analysis will evaluate logical structure across:
+1. PREMISE QUALITY: Foundation strength and reasonableness
+2. LOGICAL FLOW: Valid inference patterns and connections
+3. EVIDENCE-CONCLUSION LINKS: Support strength and relevance
+4. INTERNAL CONSISTENCY: Contradiction detection and resolution
+5. ALTERNATIVE EXPLANATIONS: Consideration of other possibilities
+</reasoning_framework>
+
+CONTENT FOR ANALYSIS:
+{article_excerpt}
 
 KEY CLAIMS:
 {key_claims}
 
-ANALYSIS FRAMEWORK:
+ANALYSIS TASKS:
 
-## ARGUMENT STRUCTURE EVALUATION
-1. **Premise Quality**: Are foundational assumptions reasonable?
-2. **Evidence-Conclusion Link**: Does evidence actually support conclusions?
-3. **Logical Flow**: Do conclusions follow logically from premises?
-4. **Missing Links**: Where are logical gaps or leaps?
+## 1. ARGUMENT STRUCTURE EVALUATION
+Examine the logical architecture:
+- **Premise Quality**: Are foundational assumptions reasonable and well-supported?
+- **Inference Validity**: Do conclusions follow logically from premises?
+- **Evidence Strength**: How well does presented evidence support each conclusion?
+- **Logical Gaps**: Where are connections missing or insufficiently supported?
 
-## INTERNAL CONSISTENCY CHECK
-- **Claim Contradictions**: Do claims contradict each other?
-- **Timeline Consistency**: Do dates and sequences align?
-- **Numerical Consistency**: Do statistics add up correctly?
-- **Definitional Consistency**: Are terms used consistently?
+## 2. INTERNAL CONSISTENCY ANALYSIS
+Check for contradictions and alignment:
+- **Claim Contradictions**: Do any claims conflict with each other?
+- **Timeline Consistency**: Are dates, sequences, and chronology accurate?
+- **Numerical Coherence**: Do statistics and quantitative claims align?
+- **Definitional Consistency**: Are key terms used consistently throughout?
 
-## REASONING QUALITY ASSESSMENT
-- **Causal Claims**: Are cause-effect relationships supported?
-- **Generalization Validity**: Are broad conclusions justified?
-- **Comparison Fairness**: Are comparisons appropriate and fair?
-- **Alternative Explanations**: Are other possibilities considered?
+## 3. REASONING QUALITY ASSESSMENT
+Evaluate thinking patterns:
+- **Causal Reasoning**: Are cause-effect relationships properly established?
+- **Generalization Validity**: Are broad conclusions justified by evidence scope?
+- **Comparative Logic**: Are comparisons appropriate and fair?
+- **Alternative Consideration**: Are other explanations acknowledged and addressed?
+
+## 4. CRITICAL REASONING INDICATORS
+Look for quality markers:
+- **Qualification Language**: Appropriate use of "may," "suggests," "indicates"
+- **Uncertainty Acknowledgment**: Recognition of limitations and unknowns
+- **Source Integration**: How well are multiple perspectives synthesized?
+- **Counterargument Handling**: How are opposing views addressed?
 
 OUTPUT FORMAT:
 **LOGICAL CONSISTENCY SCORE**: X/10
-**STRONG REASONING ELEMENTS**: [Well-supported arguments]
-**LOGICAL WEAKNESSES**: [Specific reasoning problems]
-**CRITICAL GAPS**: [Missing logical connections]
-**FALLACY ALERTS**: [Potential logical fallacies identified]
-**READER GUIDANCE**: [What to question or verify]"""
+
+**REASONING STRENGTHS**:
+• [Strength 1]: [Specific example and impact]
+• [Strength 2]: [Specific example and impact]
+• [Strength 3]: [Specific example and impact]
+
+**LOGICAL WEAKNESSES**:
+• [Weakness 1]: [Specific issue and improvement needed]
+• [Weakness 2]: [Specific issue and improvement needed]
+• [Weakness 3]: [Specific issue and improvement needed]
+
+**CRITICAL GAPS**:
+• [Gap 1]: [Missing logical connection and consequence]
+• [Gap 2]: [Missing logical connection and consequence]
+
+**REASONING QUALITY INDICATORS**:
+• Qualification Language: [Assessment]
+• Evidence Integration: [Assessment]  
+• Alternative Consideration: [Assessment]
+
+**IMPROVEMENT RECOMMENDATIONS**:
+1. [Specific suggestion for strengthening logic]
+2. [Specific suggestion for addressing gaps]
+3. [Specific suggestion for enhancing reasoning]"""
+
+            logger.info(f"Generated logical consistency analysis prompt", 
+                       extra={
+                           'session_id': session_id,
+                           'claims_count': len(claims),
+                           'article_length': len(article_text) if article_text else 0
+                       })
+            
+            return prompt
+            
+        except Exception as e:
+            logger.error(f"Logical consistency prompt generation failed: {str(e)}", 
+                        extra={'session_id': session_id})
+            return LogicalConsistencyPrompts.analyze_logical_consistency_fallback(claims, session_id)
+
+    @staticmethod
+    def analyze_logical_consistency_fallback(claims: List[str], session_id: str = None) -> str:
+        """Fallback logical consistency analysis prompt."""
+        logger = logging.getLogger(f"{__name__}.LogicalConsistencyPrompts")
+        logger.warning(f"Using fallback logical consistency prompt", extra={'session_id': session_id})
+        
+        claims_text = "No claims provided"
+        if claims:
+            claims_text = "\n".join([f"- {claim}" for claim in claims[:5]])
+        
+        return f"""Analyze the logical consistency of these claims:
+
+{claims_text}
+
+Check for:
+1. Internal contradictions
+2. Logical flow between claims
+3. Evidence-conclusion relationships
+4. Missing logical connections
+
+Provide:
+- Overall logical consistency score (1-10)
+- Main strengths in reasoning
+- Key logical weaknesses or gaps
+- Suggestions for improvement"""
+
 
 class EvidenceGapPrompts:
-    """Prompts for identifying evidence gaps and completeness issues."""
-    
+    """Enhanced prompts for identifying evidence gaps and completeness issues."""
+
     @staticmethod
-    def identify_evidence_gaps(article_text: str, claims: List[Dict[str, Any]]) -> str:
-        """Identify critical evidence gaps with specific recommendations."""
-        claims_summary = "\n".join([
-            f"• {claim.get('text', '')[:100]} (Priority: {claim.get('priority', 'Unknown')})" 
-            for claim in claims[:5]
-        ])
+    def identify_evidence_gaps(article_text: str, 
+                             claims: List[Dict[str, Any]], 
+                             session_id: str = None) -> str:
+        """
+        Comprehensive evidence gap analysis with specific recommendations.
+        """
+        logger = logging.getLogger(f"{__name__}.EvidenceGapPrompts")
         
-        return f"""Identify critical evidence gaps using systematic analysis.
+        try:
+            if not claims:
+                claims_summary = "No claims provided for analysis"
+            else:
+                claims_summary = "\n".join([
+                    f"• {claim.get('text', 'Unknown claim')[:100]} (Priority: {claim.get('priority', 'Unknown')})"
+                    for claim in claims[:5]
+                ])
+            
+            article_excerpt = str(article_text)[:1000] if article_text else "No content provided"
+            
+            prompt = f"""You are Dr. James Patterson, Senior Research Methodology Consultant with 18+ years experience in evidence assessment for academic institutions, policy organizations, and investigative journalism teams. You specialize in identifying research gaps and recommending evidence strengthening strategies.
 
-ARTICLE: {article_text[:1000]}
+<gap_analysis_framework>
+You will systematically identify missing evidence across:
+1. QUANTITATIVE EVIDENCE: Statistics, data, measurements
+2. QUALITATIVE EVIDENCE: Expert opinions, stakeholder perspectives  
+3. VERIFICATION EVIDENCE: Sources, corroboration, methodology
+4. CONTEXTUAL EVIDENCE: Background, comparison, temporal factors
+</gap_analysis_framework>
 
-CLAIMS ANALYZED:
+ARTICLE CONTENT:
+{article_excerpt}
+
+CLAIMS BEING ANALYZED:
 {claims_summary}
 
-GAP ANALYSIS FRAMEWORK:
+COMPREHENSIVE GAP ANALYSIS:
 
-## QUANTITATIVE EVIDENCE GAPS
-- **Missing Statistics**: What numbers would strengthen claims?
-- **Absent Data Sources**: What datasets should be referenced?
-- **Comparative Context**: What comparisons are missing?
-- **Sample Size Issues**: Are study populations adequate?
+## 1. QUANTITATIVE EVIDENCE GAPS
+Identify missing numerical support:
+- **Statistical Evidence**: What key statistics would strengthen claims?
+- **Data Sources**: Which authoritative datasets should be referenced?
+- **Comparative Data**: What benchmarks or control groups are missing?
+- **Sample Size Analysis**: Are study populations adequate for conclusions?
+- **Measurement Clarity**: What specific metrics should be defined?
 
-## QUALITATIVE EVIDENCE GAPS  
-- **Expert Perspectives**: Which authorities should be consulted?
-- **Stakeholder Views**: Whose voices are absent?
+## 2. QUALITATIVE EVIDENCE GAPS  
+Assess missing perspectives and context:
+- **Expert Voices**: Which subject matter authorities should be consulted?
+- **Stakeholder Input**: Whose perspectives are absent from the analysis?
 - **Historical Context**: What background information is missing?
-- **Alternative Viewpoints**: What opposing perspectives are ignored?
+- **Alternative Viewpoints**: Which opposing or nuanced positions are ignored?
+- **Case Studies**: What specific examples would illustrate key points?
 
-## VERIFICATION EVIDENCE GAPS
-- **Primary Source Access**: What original documents are missing?
-- **Independent Confirmation**: What hasn't been corroborated?
-- **Methodology Transparency**: What processes aren't explained?
-- **Replication Evidence**: What findings lack independent verification?
+## 3. VERIFICATION EVIDENCE GAPS
+Examine source and methodology issues:
+- **Primary Sources**: What original documents or data are missing?
+- **Independent Confirmation**: What lacks corroboration from separate sources?
+- **Methodology Disclosure**: Which research methods are unexplained?
+- **Replication Evidence**: What findings need independent verification?
+- **Source Diversity**: Which types of authoritative sources are underrepresented?
 
-## CONTEXTUAL EVIDENCE GAPS
-- **Temporal Context**: What timeline information is missing?
-- **Geographic Context**: What location-specific data is absent?
-- **Regulatory Context**: What legal/policy background is missing?
-- **Economic Context**: What financial implications aren't addressed?
+## 4. CONTEXTUAL EVIDENCE GAPS
+Consider broader context needs:
+- **Temporal Context**: What timeline or historical information is absent?
+- **Geographic Scope**: Which regional or demographic contexts are missing?
+- **Regulatory Framework**: What legal or policy background is needed?
+- **Economic Factors**: Which financial implications aren't addressed?
+- **Comparative Analysis**: What relevant comparisons to similar situations are absent?
 
-OUTPUT FORMAT:
+OUTPUT STRUCTURE:
 **EVIDENCE COMPLETENESS SCORE**: X/10
-**CRITICAL GAPS** (Must Address):
-- [Gap 1]: Specific missing evidence with impact
-- [Gap 2]: Specific missing evidence with impact
 
-**IMPORTANT GAPS** (Should Address):
-- [Gap 1]: Missing evidence that would improve confidence
-- [Gap 2]: Missing evidence that would improve confidence
+**CRITICAL GAPS** (Must Address - Impact on Credibility: High):
+1. [Gap Type]: [Specific missing evidence] → [Impact: Why this matters]
+2. [Gap Type]: [Specific missing evidence] → [Impact: Why this matters]
+3. [Gap Type]: [Specific missing evidence] → [Impact: Why this matters]
 
-**GAP-FILLING RECOMMENDATIONS**:
-- **For Publishers**: What additional reporting needed
-- **For Readers**: Where to find missing information
-- **Verification Strategy**: How to independently confirm claims"""
+**IMPORTANT GAPS** (Should Address - Impact on Credibility: Medium):
+1. [Gap Type]: [Missing evidence] → [Impact: How this would improve analysis]
+2. [Gap Type]: [Missing evidence] → [Impact: How this would improve analysis]
+
+**EVIDENCE STRENGTHENING ROADMAP**:
+
+**For Content Creators**:
+• [Action 1]: [Specific research or reporting needed]
+• [Action 2]: [Additional sources to contact]
+• [Action 3]: [Data collection recommendations]
+
+**For Readers/Fact-Checkers**:
+• [Verification Step 1]: [Where to find missing information]
+• [Verification Step 2]: [How to independently confirm claims]
+• [Verification Step 3]: [Cross-reference strategies]
+
+**PRIORITY RECOMMENDATIONS** (Ranked by Impact):
+1. **Highest Priority**: [Gap] - [Why critical] - [Where to find evidence]
+2. **High Priority**: [Gap] - [Why important] - [Where to find evidence]  
+3. **Medium Priority**: [Gap] - [Why helpful] - [Where to find evidence]"""
+
+            logger.info(f"Generated evidence gaps analysis prompt", 
+                       extra={
+                           'session_id': session_id,
+                           'claims_count': len(claims),
+                           'article_length': len(article_text) if article_text else 0
+                       })
+            
+            return prompt
+            
+        except Exception as e:
+            logger.error(f"Evidence gaps prompt generation failed: {str(e)}", 
+                        extra={'session_id': session_id})
+            return EvidenceGapPrompts.identify_evidence_gaps_fallback(claims, session_id)
+
+    @staticmethod
+    def identify_evidence_gaps_fallback(claims: List[Dict[str, Any]], session_id: str = None) -> str:
+        """Fallback evidence gaps analysis prompt."""
+        logger = logging.getLogger(f"{__name__}.EvidenceGapPrompts")
+        logger.warning(f"Using fallback evidence gaps prompt", extra={'session_id': session_id})
+        
+        claims_count = len(claims) if claims else 0
+        
+        return f"""Identify evidence gaps in the provided content.
+
+Claims analyzed: {claims_count}
+
+Look for missing:
+1. Statistical data or quantitative evidence
+2. Expert opinions or authoritative sources  
+3. Independent verification or corroboration
+4. Historical context or background information
+5. Alternative perspectives or counterarguments
+
+Provide:
+- Evidence completeness score (1-10)
+- Top 3 critical gaps that should be addressed
+- Recommendations for finding missing information
+- Impact assessment of each gap on overall credibility"""
+
 
 class StructuredOutputPrompts:
-    """Prompts that enforce structured JSON output for programmatic processing."""
-    
+    """Enhanced prompts for structured JSON output with validation."""
+
     @staticmethod
-    def extract_verification_data(analysis_text: str) -> str:
-        """Extract structured verification data from analysis text."""
-        return f"""Extract structured verification data from the analysis.
+    def extract_verification_data(analysis_text: str, session_id: str = None) -> str:
+        """
+        Enhanced structured data extraction with validation and error handling.
+        """
+        logger = logging.getLogger(f"{__name__}.StructuredOutputPrompts")
+        
+        try:
+            if not analysis_text or not isinstance(analysis_text, str):
+                raise_prompt_generation_error(
+                    'structured_output',
+                    "Analysis text must be non-empty string",
+                    {'analysis_text_type': type(analysis_text).__name__},
+                    session_id
+                )
+            
+            analysis_excerpt = analysis_text[:2000] if len(analysis_text) > 2000 else analysis_text
+            
+            prompt = f"""You are a data extraction specialist. Extract key information from the analysis and format it as valid JSON.
 
-ANALYSIS TEXT: {analysis_text}
+ANALYSIS TEXT TO PROCESS:
+{analysis_excerpt}
 
-Extract information into this EXACT JSON structure:
+Extract information into this EXACT JSON structure (all fields required):
 
 {{
   "verification_sources": [
     {{
-      "claim": "exact claim text",
-      "url": "specific verification URL", 
-      "institution": "authoritative organization",
-      "confidence": 0.X,
-      "verification_type": "primary_source|expert_analysis|official_data|research_study",
-      "quality_score": 0.X
+      "claim": "exact claim text from analysis",
+      "url": "specific verification URL (never homepage)",
+      "institution": "authoritative organization name",
+      "confidence": 0.8,
+      "verification_type": "primary_source",
+      "quality_score": 0.9
     }}
   ],
   "source_quality": {{
-    "overall_score": X.X,
-    "strongest_sources": ["source1", "source2"],
+    "overall_score": 7.5,
+    "strongest_sources": ["source1", "source2", "source3"],
     "quality_concerns": ["concern1", "concern2"]
   }},
   "logical_consistency": {{
-    "consistency_score": X.X,
-    "reasoning_strengths": ["strength1", "strength2"], 
+    "consistency_score": 8.2,
+    "reasoning_strengths": ["strength1", "strength2"],
     "logical_weaknesses": ["weakness1", "weakness2"]
   }},
   "evidence_gaps": {{
-    "completeness_score": X.X,
+    "completeness_score": 6.8,
     "critical_gaps": ["gap1", "gap2"],
     "recommendations": ["rec1", "rec2"]
   }}
 }}
 
-REQUIREMENTS:
-- All scores as decimals (0.1 to 1.0)
-- URLs must be specific, not homepages
-- Arrays limited to top 3 items each
-- Valid JSON format only"""
+STRICT REQUIREMENTS:
+- All scores must be decimals between 0.1 and 10.0
+- Arrays limited to maximum 3 items each
+- URLs must be specific pages, never homepages
+- All text fields must be meaningful, not placeholder text
+- Output must be valid JSON only - no additional text
+
+Extract and format the data now:"""
+
+            logger.info(f"Generated structured output extraction prompt", 
+                       extra={
+                           'session_id': session_id,
+                           'analysis_length': len(analysis_text)
+                       })
+            
+            return prompt
+            
+        except PromptGenerationError:
+            raise
+        except Exception as e:
+            logger.error(f"Structured output prompt generation failed: {str(e)}", 
+                        extra={'session_id': session_id})
+            return StructuredOutputPrompts.extract_verification_data_fallback(session_id)
+
+    @staticmethod
+    def extract_verification_data_fallback(session_id: str = None) -> str:
+        """Fallback structured output extraction prompt."""
+        logger = logging.getLogger(f"{__name__}.StructuredOutputPrompts")
+        logger.warning(f"Using fallback structured output prompt", extra={'session_id': session_id})
+        
+        return """{
+  "verification_sources": [],
+  "source_quality": {
+    "overall_score": 5.0,
+    "strongest_sources": [],
+    "quality_concerns": ["Analysis unavailable"]
+  },
+  "logical_consistency": {
+    "consistency_score": 5.0,
+    "reasoning_strengths": [],
+    "logical_weaknesses": ["Analysis unavailable"]
+  },
+  "evidence_gaps": {
+    "completeness_score": 5.0,
+    "critical_gaps": ["Full analysis unavailable"],
+    "recommendations": ["Retry analysis"]
+  }
+}"""
+
 
 class DomainSpecificPrompts:
-    """Domain-specific prompt templates for different content types."""
-    
-    MEDICAL_VERIFICATION = """
-    For medical claims, prioritize:
-    - PubMed/MEDLINE database searches
-    - FDA official statements and approvals
-    - CDC guidelines and recommendations  
-    - WHO official positions
-    - Peer-reviewed medical journals
-    - Professional medical association statements
-    
-    SPECIFIC DOMAINS:
-    - https://pubmed.ncbi.nlm.nih.gov/ (research studies)
-    - https://www.fda.gov/news-events/ (regulatory actions)
-    - https://www.cdc.gov/ (health guidelines)
-    - https://www.who.int/ (global health positions)
-    """
-    
-    POLITICAL_VERIFICATION = """
-    For political claims, prioritize:
-    - Official government websites (.gov domains)
-    - Congressional records and voting databases
-    - Official policy documents and legislation
-    - Government statistics and data portals
-    - Official statements from agencies
-    - Verified electoral data sources
-    
-    SPECIFIC DOMAINS:
-    - https://www.congress.gov/ (legislative information)
-    - https://www.gpo.gov/ (official government documents)
-    - https://data.gov/ (government datasets)
-    - https://www.fec.gov/ (electoral information)
-    """
-    
-    SCIENTIFIC_VERIFICATION = """
-    For scientific claims, prioritize:
-    - Peer-reviewed journal articles
-    - University research publications
-    - Government research agencies (NSF, NIH, NASA)
-    - Professional scientific organizations
-    - Institutional research repositories
-    - Independent research institutions
-    
-    SPECIFIC DOMAINS:
-    - https://pubmed.ncbi.nlm.nih.gov/ (life sciences)
-    - https://arxiv.org/ (preprint research)
-    - https://www.nsf.gov/ (National Science Foundation)
-    - https://www.nature.com/ (Nature publications)
-    """
+    """Enhanced domain-specific prompt templates with specialized instructions."""
+
+    MEDICAL_VERIFICATION_ENHANCED = """
+For MEDICAL/HEALTH claims, prioritize these authoritative sources in order:
+
+**TIER 1 (Highest Authority)**:
+• PubMed/MEDLINE: https://pubmed.ncbi.nlm.nih.gov/[PMID] (peer-reviewed research)
+• FDA Official: https://www.fda.gov/news-events/press-announcements/[specific-announcement]
+• CDC Guidelines: https://www.cdc.gov/[specific-health-topic]/[guidance-page]
+• WHO Position: https://www.who.int/news-room/[specific-statement]
+
+**TIER 2 (High Authority)**:
+• NIH Institutes: https://www.[institute].nih.gov/[specific-research-findings]
+• Medical Journals: https://www.[journal].com/article/[doi-or-id]
+• Professional Associations: https://www.[association].org/[position-statements]
+
+**VERIFICATION STRATEGIES**:
+• Search: "[specific drug/treatment/condition]" site:pubmed.ncbi.nlm.nih.gov
+• Cross-reference: Multiple independent clinical studies
+• Check: FDA approval status and safety communications
+• Validate: WHO/CDC official position statements
+
+**RED FLAGS TO AVOID**:
+• Personal health blogs or testimonials
+• Non-peer-reviewed preprint servers
+• Commercial websites selling products
+• Social media health claims
+"""
+
+    POLITICAL_VERIFICATION_ENHANCED = """
+For POLITICAL/POLICY claims, prioritize these authoritative sources:
+
+**TIER 1 (Highest Authority)**:
+• Congress Records: https://www.congress.gov/bill/[congress]/[bill-type]/[number]
+• Government Data: https://data.gov/dataset/[specific-dataset]
+• Official Agencies: https://www.[agency].gov/[specific-policy-or-data]
+• Federal Register: https://www.federalregister.gov/documents/[date]/[document-id]
+
+**TIER 2 (High Authority)**:
+• Congressional Budget Office: https://www.cbo.gov/publication/[report-number]
+• Government Accountability Office: https://www.gao.gov/products/[report-id]
+• Bureau of Statistics: https://www.[bureau].gov/[specific-statistics]
+
+**VERIFICATION STRATEGIES**:
+• Search: "[policy/bill name]" site:congress.gov
+• Cross-check: Official vote records and legislative history  
+• Validate: Government agency implementation data
+• Confirm: Multiple official government sources
+
+**RED FLAGS TO AVOID**:
+• Partisan advocacy websites
+• Unsourced political blogs
+• Social media political claims
+• Opinion pieces without factual basis
+"""
+
+    SCIENTIFIC_VERIFICATION_ENHANCED = """
+For SCIENTIFIC/RESEARCH claims, prioritize these authoritative sources:
+
+**TIER 1 (Highest Authority)**:
+• Peer-reviewed Journals: https://www.[journal].com/articles/[doi]
+• ArXiv (Physics/Math): https://arxiv.org/abs/[paper-id]
+• University Research: https://www.[university].edu/research/[specific-study]
+• Government Research: https://www.[agency].gov/research/[study-id]
+
+**TIER 2 (High Authority)**:
+• Scientific Organizations: https://www.[organization].org/[position-statement]
+• Research Institutions: https://www.[institution].org/publications/[report]
+• Academic Repositories: https://[repository].[university].edu/[paper-id]
+
+**VERIFICATION STRATEGIES**:
+• Search: "[research topic] peer reviewed" site:edu
+• Cross-reference: Citation index and replication studies
+• Check: Journal impact factor and peer review process
+• Validate: Independent confirmation by other researchers
+
+**QUALITY INDICATORS**:
+• Peer review status clearly stated
+• Methodology section detailed
+• Data availability mentioned
+• Conflict of interest disclosed
+• Sample size adequate for conclusions
+"""
+
 
 class PromptValidator:
-    """Validation methods for prompt inputs and outputs."""
-    
-    @staticmethod
-    def validate_url_specificity(url: str) -> bool:
-        """Validate that URL is specific and not just a homepage."""
+    """Enhanced prompt validation with comprehensive error checking."""
+
+    def __init__(self, config: Dict[str, Any] = None):
+        """Initialize prompt validator with configuration."""
+        self.config = config or {}
+        self.logger = logging.getLogger(f"{__name__}.PromptValidator")
+
+    def validate_url_specificity(self, url: str) -> bool:
+        """
+        Enhanced URL specificity validation with detailed pattern checking.
+        
+        Args:
+            url: URL to validate for specificity
+            
+        Returns:
+            True if URL is specific, False if generic
+        """
+        if not url or not isinstance(url, str):
+            return False
+        
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(url.strip())
+        except:
+            return False
+        
+        # Enhanced generic patterns
         generic_patterns = [
-            r'https?://[^/]+/?$',  # Just domain with optional trailing slash
-            r'https?://[^/]+/index\.html?$',  # Index pages
-            r'https?://[^/]+/home/?$',  # Home pages
+            r'^/?$',                          # Root path only
+            r'^/index\.html?$',               # Index pages
+            r'^/home/?$',                     # Home pages  
+            r'^/main/?$',                     # Main pages
+            r'^/default\.html?$',             # Default pages
+            r'^/about/?$',                    # About pages
+            r'^/news/?$',                     # General news sections
+            r'^/research/?$',                 # General research sections
+            r'^/publications/?$',             # General publications
+            r'^/press/?$',                    # General press sections
+            r'^/media/?$',                    # General media sections
         ]
         
-        import re
+        path = parsed.path.lower() if parsed.path else ""
+        
         for pattern in generic_patterns:
-            if re.match(pattern, url):
+            if re.match(pattern, path):
+                self.logger.debug(f"URL failed specificity check: {url} matched pattern {pattern}")
                 return False
         
         # URL should have meaningful path beyond domain
-        return len(url.split('/')) > 3
-    
-    @staticmethod
-    def extract_confidence_score(text: str) -> float:
-        """Extract confidence score from analysis text."""
-        import re
-        confidence_pattern = r'confidence[:\s]+([0-9]\.[0-9]+)'
-        match = re.search(confidence_pattern, text.lower())
-        if match:
-            return float(match.group(1))
+        path_segments = [seg for seg in path.split('/') if seg]
+        if len(path_segments) < 2:
+            self.logger.debug(f"URL failed specificity check: {url} has insufficient path segments")
+            return False
+        
+        # Positive indicators of specificity
+        specific_indicators = [
+            'article', 'study', 'research', 'report', 'publication', 'paper',
+            'analysis', 'findings', 'results', 'data', 'statistics', 'document',
+            'announcement', 'statement', 'press-release', 'guidance', 'policy'
+        ]
+        
+        has_specific_indicator = any(indicator in path.lower() for indicator in specific_indicators)
+        
+        # Query parameters or fragments indicate specificity
+        has_specificity_markers = bool(parsed.query or parsed.fragment)
+        
+        is_specific = len(path_segments) >= 2 and (has_specific_indicator or has_specificity_markers)
+        
+        self.logger.debug(f"URL specificity validation: {url} -> {is_specific}")
+        return is_specific
+
+    def extract_confidence_score(self, text: str) -> float:
+        """
+        Enhanced confidence score extraction with multiple pattern support.
+        
+        Args:
+            text: Text to extract confidence score from
+            
+        Returns:
+            Extracted confidence score or default value
+        """
+        if not text or not isinstance(text, str):
+            return 0.5
+        
+        # Multiple patterns for confidence extraction
+        confidence_patterns = [
+            r'confidence[:\s]+([0-9]\.[0-9]+)',
+            r'confidence[:\s]+([0-9]+\.?[0-9]*)',
+            r'confidence[:\s]+([0-9]+)%',
+            r'score[:\s]+([0-9]\.[0-9]+)',
+            r'rating[:\s]+([0-9]\.[0-9]+)',
+        ]
+        
+        for pattern in confidence_patterns:
+            match = re.search(pattern, text.lower())
+            if match:
+                try:
+                    score = float(match.group(1))
+                    # Normalize percentage scores
+                    if score > 1.0:
+                        score = score / 100.0
+                    # Ensure valid range
+                    return max(0.1, min(1.0, score))
+                except ValueError:
+                    continue
+        
+        self.logger.debug(f"No confidence score found in text, using default 0.5")
         return 0.5  # Default moderate confidence
 
-def get_prompt_template(prompt_type: str, **kwargs) -> str:
+    def validate_prompt_parameters(self, prompt_type: str, **kwargs) -> bool:
+        """
+        Validate parameters for prompt generation.
+        
+        Args:
+            prompt_type: Type of prompt being generated
+            **kwargs: Parameters to validate
+            
+        Returns:
+            True if parameters are valid, False otherwise
+        """
+        required_params = {
+            'verification_sources': ['article_text', 'claims'],
+            'source_quality': ['article_text', 'sources'],
+            'logical_consistency': ['article_text', 'claims'],
+            'evidence_gaps': ['article_text', 'claims'],
+            'structured_output': ['analysis_text']
+        }
+        
+        if prompt_type not in required_params:
+            self.logger.warning(f"Unknown prompt type for validation: {prompt_type}")
+            return False
+        
+        missing_params = []
+        for param in required_params[prompt_type]:
+            if param not in kwargs or not kwargs[param]:
+                missing_params.append(param)
+        
+        if missing_params:
+            self.logger.error(f"Missing required parameters for {prompt_type}: {missing_params}")
+            return False
+        
+        self.logger.debug(f"Prompt parameters validated for {prompt_type}")
+        return True
+
+
+def get_prompt_template(prompt_type: str, session_id: str = None, **kwargs) -> str:
     """
-    Get specific prompt template with parameters.
+    Enhanced prompt template retrieval with validation and fallback handling.
     
     Args:
         prompt_type: Type of prompt needed
+        session_id: Optional session ID for tracking
         **kwargs: Parameters for prompt formatting
         
     Returns:
         Formatted prompt string
-    """
-    prompt_mapping = {
-        'verification_sources': EvidenceVerificationPrompts.generate_verification_sources,
-        'source_quality': EvidenceVerificationPrompts.assess_source_quality,
-        'logical_consistency': LogicalConsistencyPrompts.analyze_logical_consistency,
-        'evidence_gaps': EvidenceGapPrompts.identify_evidence_gaps,
-        'structured_output': StructuredOutputPrompts.extract_verification_data,
-    }
-    
-    if prompt_type not in prompt_mapping:
-        raise ValueError(f"Unknown prompt type: {prompt_type}")
-    
-    return prompt_mapping[prompt_type](**kwargs)
-# agents/evidence_evaluator/prompts.py
-
-"""
-Evidence Evaluator Prompts Module
-
-Industry-standard prompt templates for evidence evaluation with structured output
-and URL specificity enforcement. Uses Chain-of-Thought and Few-Shot patterns.
-"""
-
-from typing import Dict, List, Any
-from dataclasses import dataclass
-
-@dataclass
-class PromptResponse:
-    """Structured response container for prompt outputs."""
-    content: str
-    metadata: Dict[str, Any]
-
-class EvidenceVerificationPrompts:
-    """Evidence verification prompts with URL specificity enforcement."""
-    
-    @staticmethod
-    def generate_verification_sources(article_text: str, claims: List[Dict[str, Any]]) -> str:
-        """
-        Generate specific verification sources with actionable URLs.
-        Uses Chain-of-Thought and structured output patterns.
-        """
-        claims_text = "\n".join([f"{i+1}. {claim.get('text', '')}" for i, claim in enumerate(claims[:5])])
         
-        return f"""You are a fact-checking specialist providing SPECIFIC verification sources for exact claims.
-
-ARTICLE CONTENT: {article_text[:1200]}
-
-CLAIMS TO VERIFY:
-{claims_text}
-
-TASK: Provide exactly 5 specific verification sources using this EXACT format:
-
-## VERIFICATION SOURCE 1
-**CLAIM**: "Exact quote from article being verified"
-**INSTITUTION**: Name of authoritative organization
-**SPECIFIC_URL**: https://domain.org/exact-page-that-verifies-this-claim
-**VERIFICATION_TYPE**: primary_source|expert_analysis|official_data|research_study
-**SEARCH_STRATEGY**: "exact keywords" site:domain.org
-**CONFIDENCE**: 0.X (decimal from 0.1 to 1.0)
-
-## VERIFICATION SOURCE 2
-[Continue same format...]
-
-CRITICAL REQUIREMENTS:
-1. URLs must be SPECIFIC to the claim, not homepage
-2. Each URL should directly address the exact claim
-3. Use authoritative domains: .gov, .edu, major institutions
-4. Provide specific search terms to find the verification
-5. Match institution credibility to claim type
-
-EXAMPLES OF GOOD URLS:
-- https://www.cdc.gov/vaccines/covid-19/clinical-considerations/managing-anaphylaxis.html
-- https://pubmed.ncbi.nlm.nih.gov/34289274/
-- https://www.fda.gov/news-events/press-announcements/fda-approves-first-covid-19-vaccine
-
-EXAMPLES OF BAD URLS (DO NOT USE):
-- https://www.cdc.gov/ (too general)
-- https://pubmed.ncbi.nlm.nih.gov/ (homepage only)
-- https://www.fda.gov/ (not specific)
-
-OUTPUT: Provide exactly 5 sources in the specified format."""
-
-    @staticmethod
-    def assess_source_quality(article_text: str, sources: List[str]) -> str:
-        """Assess source quality with structured evaluation."""
-        sources_list = "\n".join([f"- {source}" for source in sources[:10]])
-        
-        return f"""Analyze source quality using systematic evaluation framework.
-
-CONTENT: {article_text[:800]}
-
-IDENTIFIED SOURCES:
-{sources_list}
-
-EVALUATION FRAMEWORK:
-
-## AUTHORITY ASSESSMENT
-For each source, evaluate:
-- **Institutional Credibility**: Government/Academic/Professional/Independent
-- **Domain Expertise**: Directly relevant to claims
-- **Recognition**: Peer-acknowledged authority
-- **Track Record**: History of accurate information
-
-## TRANSPARENCY EVALUATION  
-- **Methodology Disclosure**: How information was gathered
-- **Funding Sources**: Financial backing transparency  
-- **Bias Indicators**: Potential conflicts of interest
-- **Correction Policy**: How errors are handled
-
-## VERIFICATION POTENTIAL
-- **Primary vs Secondary**: Original vs. reported information
-- **Accessibility**: Can readers verify claims independently
-- **Corroboration**: Multiple independent sources available
-- **Recency**: Information currency and relevance
-
-OUTPUT FORMAT:
-**OVERALL SOURCE QUALITY**: X/10
-**STRONGEST SOURCES**: [List top 3 with scores]
-**WEAKEST SOURCES**: [List concerning sources with reasons]
-**VERIFICATION RECOMMENDATIONS**: [Specific steps for readers]
-**MISSING SOURCE TYPES**: [What additional sources needed]"""
-
-class LogicalConsistencyPrompts:
-    """Prompts for logical consistency and reasoning quality analysis."""
-    
-    @staticmethod
-    def analyze_logical_consistency(article_text: str, claims: List[str]) -> str:
-        """Analyze logical consistency using structured reasoning framework."""
-        key_claims = "\n".join([f"• {claim}" for claim in claims[:6]])
-        
-        return f"""Conduct systematic logical consistency analysis.
-
-CONTENT: {article_text[:1000]}
-
-KEY CLAIMS:
-{key_claims}
-
-ANALYSIS FRAMEWORK:
-
-## ARGUMENT STRUCTURE EVALUATION
-1. **Premise Quality**: Are foundational assumptions reasonable?
-2. **Evidence-Conclusion Link**: Does evidence actually support conclusions?
-3. **Logical Flow**: Do conclusions follow logically from premises?
-4. **Missing Links**: Where are logical gaps or leaps?
-
-## INTERNAL CONSISTENCY CHECK
-- **Claim Contradictions**: Do claims contradict each other?
-- **Timeline Consistency**: Do dates and sequences align?
-- **Numerical Consistency**: Do statistics add up correctly?
-- **Definitional Consistency**: Are terms used consistently?
-
-## REASONING QUALITY ASSESSMENT
-- **Causal Claims**: Are cause-effect relationships supported?
-- **Generalization Validity**: Are broad conclusions justified?
-- **Comparison Fairness**: Are comparisons appropriate and fair?
-- **Alternative Explanations**: Are other possibilities considered?
-
-OUTPUT FORMAT:
-**LOGICAL CONSISTENCY SCORE**: X/10
-**STRONG REASONING ELEMENTS**: [Well-supported arguments]
-**LOGICAL WEAKNESSES**: [Specific reasoning problems]
-**CRITICAL GAPS**: [Missing logical connections]
-**FALLACY ALERTS**: [Potential logical fallacies identified]
-**READER GUIDANCE**: [What to question or verify]"""
-
-class EvidenceGapPrompts:
-    """Prompts for identifying evidence gaps and completeness issues."""
-    
-    @staticmethod
-    def identify_evidence_gaps(article_text: str, claims: List[Dict[str, Any]]) -> str:
-        """Identify critical evidence gaps with specific recommendations."""
-        claims_summary = "\n".join([
-            f"• {claim.get('text', '')[:100]} (Priority: {claim.get('priority', 'Unknown')})" 
-            for claim in claims[:5]
-        ])
-        
-        return f"""Identify critical evidence gaps using systematic analysis.
-
-ARTICLE: {article_text[:1000]}
-
-CLAIMS ANALYZED:
-{claims_summary}
-
-GAP ANALYSIS FRAMEWORK:
-
-## QUANTITATIVE EVIDENCE GAPS
-- **Missing Statistics**: What numbers would strengthen claims?
-- **Absent Data Sources**: What datasets should be referenced?
-- **Comparative Context**: What comparisons are missing?
-- **Sample Size Issues**: Are study populations adequate?
-
-## QUALITATIVE EVIDENCE GAPS  
-- **Expert Perspectives**: Which authorities should be consulted?
-- **Stakeholder Views**: Whose voices are absent?
-- **Historical Context**: What background information is missing?
-- **Alternative Viewpoints**: What opposing perspectives are ignored?
-
-## VERIFICATION EVIDENCE GAPS
-- **Primary Source Access**: What original documents are missing?
-- **Independent Confirmation**: What hasn't been corroborated?
-- **Methodology Transparency**: What processes aren't explained?
-- **Replication Evidence**: What findings lack independent verification?
-
-## CONTEXTUAL EVIDENCE GAPS
-- **Temporal Context**: What timeline information is missing?
-- **Geographic Context**: What location-specific data is absent?
-- **Regulatory Context**: What legal/policy background is missing?
-- **Economic Context**: What financial implications aren't addressed?
-
-OUTPUT FORMAT:
-**EVIDENCE COMPLETENESS SCORE**: X/10
-**CRITICAL GAPS** (Must Address):
-- [Gap 1]: Specific missing evidence with impact
-- [Gap 2]: Specific missing evidence with impact
-
-**IMPORTANT GAPS** (Should Address):
-- [Gap 1]: Missing evidence that would improve confidence
-- [Gap 2]: Missing evidence that would improve confidence
-
-**GAP-FILLING RECOMMENDATIONS**:
-- **For Publishers**: What additional reporting needed
-- **For Readers**: Where to find missing information
-- **Verification Strategy**: How to independently confirm claims"""
-
-class StructuredOutputPrompts:
-    """Prompts that enforce structured JSON output for programmatic processing."""
-    
-    @staticmethod
-    def extract_verification_data(analysis_text: str) -> str:
-        """Extract structured verification data from analysis text."""
-        return f"""Extract structured verification data from the analysis.
-
-ANALYSIS TEXT: {analysis_text}
-
-Extract information into this EXACT JSON structure:
-
-{{
-  "verification_sources": [
-    {{
-      "claim": "exact claim text",
-      "url": "specific verification URL", 
-      "institution": "authoritative organization",
-      "confidence": 0.X,
-      "verification_type": "primary_source|expert_analysis|official_data|research_study",
-      "quality_score": 0.X
-    }}
-  ],
-  "source_quality": {{
-    "overall_score": X.X,
-    "strongest_sources": ["source1", "source2"],
-    "quality_concerns": ["concern1", "concern2"]
-  }},
-  "logical_consistency": {{
-    "consistency_score": X.X,
-    "reasoning_strengths": ["strength1", "strength2"], 
-    "logical_weaknesses": ["weakness1", "weakness2"]
-  }},
-  "evidence_gaps": {{
-    "completeness_score": X.X,
-    "critical_gaps": ["gap1", "gap2"],
-    "recommendations": ["rec1", "rec2"]
-  }}
-}}
-
-REQUIREMENTS:
-- All scores as decimals (0.1 to 1.0)
-- URLs must be specific, not homepages
-- Arrays limited to top 3 items each
-- Valid JSON format only"""
-
-class DomainSpecificPrompts:
-    """Domain-specific prompt templates for different content types."""
-    
-    MEDICAL_VERIFICATION = """
-    For medical claims, prioritize:
-    - PubMed/MEDLINE database searches
-    - FDA official statements and approvals
-    - CDC guidelines and recommendations  
-    - WHO official positions
-    - Peer-reviewed medical journals
-    - Professional medical association statements
-    
-    SPECIFIC DOMAINS:
-    - https://pubmed.ncbi.nlm.nih.gov/ (research studies)
-    - https://www.fda.gov/news-events/ (regulatory actions)
-    - https://www.cdc.gov/ (health guidelines)
-    - https://www.who.int/ (global health positions)
+    Raises:
+        PromptGenerationError: If prompt generation fails
     """
+    logger = logging.getLogger(f"{__name__}.get_prompt_template")
     
-    POLITICAL_VERIFICATION = """
-    For political claims, prioritize:
-    - Official government websites (.gov domains)
-    - Congressional records and voting databases
-    - Official policy documents and legislation
-    - Government statistics and data portals
-    - Official statements from agencies
-    - Verified electoral data sources
-    
-    SPECIFIC DOMAINS:
-    - https://www.congress.gov/ (legislative information)
-    - https://www.gpo.gov/ (official government documents)
-    - https://data.gov/ (government datasets)
-    - https://www.fec.gov/ (electoral information)
-    """
-    
-    SCIENTIFIC_VERIFICATION = """
-    For scientific claims, prioritize:
-    - Peer-reviewed journal articles
-    - University research publications
-    - Government research agencies (NSF, NIH, NASA)
-    - Professional scientific organizations
-    - Institutional research repositories
-    - Independent research institutions
-    
-    SPECIFIC DOMAINS:
-    - https://pubmed.ncbi.nlm.nih.gov/ (life sciences)
-    - https://arxiv.org/ (preprint research)
-    - https://www.nsf.gov/ (National Science Foundation)
-    - https://www.nature.com/ (Nature publications)
-    """
+    try:
+        # Validate prompt type and parameters
+        validator = PromptValidator()
+        if not validator.validate_prompt_parameters(prompt_type, **kwargs):
+            raise_prompt_generation_error(
+                prompt_type,
+                f"Invalid parameters for prompt type: {prompt_type}",
+                {'provided_params': list(kwargs.keys())},
+                session_id
+            )
+        
+        # Prompt mapping with fallback support
+        prompt_mapping = {
+            'verification_sources': (
+                EvidenceVerificationPrompts.generate_verification_sources,
+                EvidenceVerificationPrompts.generate_verification_sources_fallback
+            ),
+            'source_quality': (
+                EvidenceVerificationPrompts.assess_source_quality,
+                EvidenceVerificationPrompts.assess_source_quality_fallback
+            ),
+            'logical_consistency': (
+                LogicalConsistencyPrompts.analyze_logical_consistency,
+                LogicalConsistencyPrompts.analyze_logical_consistency_fallback
+            ),
+            'evidence_gaps': (
+                EvidenceGapPrompts.identify_evidence_gaps,
+                EvidenceGapPrompts.identify_evidence_gaps_fallback
+            ),
+            'structured_output': (
+                StructuredOutputPrompts.extract_verification_data,
+                StructuredOutputPrompts.extract_verification_data_fallback
+            )
+        }
+        
+        if prompt_type not in prompt_mapping:
+            raise_prompt_generation_error(
+                prompt_type,
+                f"Unknown prompt type: {prompt_type}",
+                {'available_types': list(prompt_mapping.keys())},
+                session_id
+            )
+        
+        # Try main prompt generation
+        main_func, fallback_func = prompt_mapping[prompt_type]
+        
+        try:
+            # Add session_id to kwargs if the function supports it
+            import inspect
+            sig = inspect.signature(main_func)
+            if 'session_id' in sig.parameters:
+                kwargs['session_id'] = session_id
+            
+            prompt = main_func(**kwargs)
+            
+            logger.info(f"Generated {prompt_type} prompt successfully", 
+                       extra={
+                           'session_id': session_id,
+                           'prompt_length': len(prompt)
+                       })
+            
+            return prompt
+            
+        except Exception as main_error:
+            logger.warning(f"Main prompt generation failed for {prompt_type}, trying fallback: {str(main_error)}", 
+                          extra={'session_id': session_id})
+            
+            # Try fallback prompt
+            try:
+                sig = inspect.signature(fallback_func)
+                if 'session_id' in sig.parameters:
+                    kwargs['session_id'] = session_id
+                
+                fallback_prompt = fallback_func(**kwargs)
+                
+                logger.info(f"Generated fallback {prompt_type} prompt", 
+                           extra={'session_id': session_id})
+                
+                return fallback_prompt
+                
+            except Exception as fallback_error:
+                logger.error(f"Both main and fallback prompt generation failed for {prompt_type}", 
+                            extra={'session_id': session_id})
+                raise_prompt_generation_error(
+                    prompt_type,
+                    f"All prompt generation methods failed. Main: {str(main_error)}, Fallback: {str(fallback_error)}",
+                    {'main_error': str(main_error), 'fallback_error': str(fallback_error)},
+                    session_id
+                )
+        
+    except PromptGenerationError:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in prompt template retrieval: {str(e)}", 
+                    extra={'session_id': session_id})
+        raise_prompt_generation_error(
+            prompt_type,
+            f"Unexpected error: {str(e)}",
+            {'error_type': type(e).__name__},
+            session_id
+        )
 
-class PromptValidator:
-    """Validation methods for prompt inputs and outputs."""
+
+# Testing functionality
+if __name__ == "__main__":
+    """Test prompt generation functionality."""
+    import logging
     
-    @staticmethod
-    def validate_url_specificity(url: str) -> bool:
-        """Validate that URL is specific and not just a homepage."""
-        generic_patterns = [
-            r'https?://[^/]+/?$',  # Just domain with optional trailing slash
-            r'https?://[^/]+/index\.html?$',  # Index pages
-            r'https?://[^/]+/home/?$',  # Home pages
+    # Setup logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    
+    test_session_id = "prompt_test_456"
+    
+    # Test verification sources prompt
+    print("=== VERIFICATION SOURCES PROMPT TEST ===")
+    try:
+        test_article = "According to a Harvard study published in Nature, the treatment showed 85% efficacy in clinical trials with 2,400 participants."
+        test_claims = [
+            {'text': 'Harvard study shows treatment efficacy', 'verifiability_score': 8},
+            {'text': 'Nature publication with clinical trial data', 'verifiability_score': 9}
         ]
         
-        import re
-        for pattern in generic_patterns:
-            if re.match(pattern, url):
-                return False
+        prompt = get_prompt_template(
+            'verification_sources',
+            article_text=test_article,
+            claims=test_claims,
+            session_id=test_session_id
+        )
         
-        # URL should have meaningful path beyond domain
-        return len(url.split('/')) > 3
-    
-    @staticmethod
-    def extract_confidence_score(text: str) -> float:
-        """Extract confidence score from analysis text."""
-        import re
-        confidence_pattern = r'confidence[:\s]+([0-9]\.[0-9]+)'
-        match = re.search(confidence_pattern, text.lower())
-        if match:
-            return float(match.group(1))
-        return 0.5  # Default moderate confidence
-
-def get_prompt_template(prompt_type: str, **kwargs) -> str:
-    """
-    Get specific prompt template with parameters.
-    
-    Args:
-        prompt_type: Type of prompt needed
-        **kwargs: Parameters for prompt formatting
+        print(f"✅ Generated verification sources prompt ({len(prompt)} characters)")
+        print(f"Preview: {prompt[:200]}...")
         
-    Returns:
-        Formatted prompt string
-    """
-    prompt_mapping = {
-        'verification_sources': EvidenceVerificationPrompts.generate_verification_sources,
-        'source_quality': EvidenceVerificationPrompts.assess_source_quality,
-        'logical_consistency': LogicalConsistencyPrompts.analyze_logical_consistency,
-        'evidence_gaps': EvidenceGapPrompts.identify_evidence_gaps,
-        'structured_output': StructuredOutputPrompts.extract_verification_data,
-    }
+    except Exception as e:
+        print(f"❌ Verification sources prompt test failed: {str(e)}")
     
-    if prompt_type not in prompt_mapping:
-        raise ValueError(f"Unknown prompt type: {prompt_type}")
+    # Test URL validation
+    print("\n=== URL VALIDATION TEST ===")
+    validator = PromptValidator()
+    test_urls = [
+        'https://www.nature.com/articles/nature12345',  # Should pass
+        'https://www.cdc.gov/',  # Should fail (homepage)
+        'https://pubmed.ncbi.nlm.nih.gov/12345678/',  # Should pass
+    ]
     
-    return prompt_mapping[prompt_type](**kwargs)
+    for url in test_urls:
+        is_specific = validator.validate_url_specificity(url)
+        print(f"URL: {url} -> {'✅ Specific' if is_specific else '❌ Generic'}")
+    
+    # Test confidence extraction
+    print("\n=== CONFIDENCE EXTRACTION TEST ===")
+    test_texts = [
+        "The confidence is 0.85 for this source",
+        "Confidence: 7.5/10 based on analysis",
+        "High confidence score of 90%",
+        "No confidence information available"
+    ]
+    
+    for text in test_texts:
+        confidence = validator.extract_confidence_score(text)
+        print(f"Text: '{text}' -> Confidence: {confidence}")
+    
+    print("\n✅ Prompt system tests completed")

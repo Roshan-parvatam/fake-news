@@ -1,18 +1,25 @@
+# agents/base_agent.py
+
 """
-Enhanced Base Agent Class for Production Fake News Detection System
+Enhanced Base Agent for Production Fake News Detection System
 
 Production-ready foundational class that all fake news detection agents inherit from.
 Provides comprehensive functionality for LangGraph orchestration with robust error
-handling, structured logging, and performance monitoring.
+handling, structured logging, performance monitoring, and full compatibility with
+enhanced agent ecosystem.
 
 Key Features:
 - Abstract base class for consistent agent interfaces
 - Configuration-driven approach with environment support
 - Standardized input/output formats for LangGraph compatibility
-- Comprehensive error handling with custom exceptions
-- Structured logging and performance tracking
-- Async support for web applications
-- Memory-efficient processing with cleanup
+- Comprehensive error handling with enhanced exception integration
+- Structured logging with session tracking and production file handlers
+- Advanced performance tracking and health monitoring
+- Async support for web applications and concurrent processing
+- Memory-efficient processing with automated cleanup
+- Integration with enhanced exception system for consistent error handling
+
+Version: 3.2.0 - Enhanced Production Edition
 """
 
 from abc import ABC, abstractmethod
@@ -27,250 +34,434 @@ import hashlib
 from pathlib import Path
 import traceback
 import gc
+import psutil
+
+# Enhanced exception integration with comprehensive error handling
+from agents.llm_explanation.exceptions import (
+    handle_llm_explanation_exception,
+    ErrorSeverity,
+    ErrorCategory,
+    ErrorContext,
+    log_exception_with_context,
+    is_recoverable_error,
+    get_retry_delay,
+    get_error_recovery_suggestion
+)
 
 
 class BaseAgent(ABC):
     """
     Enhanced Base Agent Class for Production Fake News Detection
-    
+
     Provides comprehensive foundation for all detection agents with:
-    - Robust error handling and recovery mechanisms
-    - Performance monitoring and optimization
+    - Robust error handling and recovery mechanisms with enhanced exception integration
+    - Performance monitoring and optimization with detailed metrics
     - LangGraph state management compatibility
-    - Production logging and debugging support
-    - Memory management and cleanup
-    - Async processing capabilities
+    - Production logging and debugging support with session tracking
+    - Memory management and automated cleanup
+    - Async processing capabilities with concurrent session support
+    - Health monitoring and status reporting for production environments
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
-        Initialize base agent with production-ready configuration.
-        
+        Initialize enhanced base agent with production-ready configuration.
+
         Args:
             config: Optional configuration dictionary with agent settings
         """
-        # Setup configuration with environment awareness
+        # Setup enhanced configuration with environment awareness
         self.config = self._setup_production_config(config)
-        
-        # Initialize structured logging
-        self.logger = self._setup_structured_logging()
-        
+
+        # Initialize structured logging with session tracking
+        self.logger = self._setup_enhanced_logging()
+
         # Agent identification and metadata
         self.agent_name = self.__class__.__name__
         self.agent_type = self._determine_agent_type()
         self.agent_version = "3.2.0"
         self.initialized_at = datetime.now().isoformat()
-        
-        # Performance and monitoring setup
+
+        # Performance and monitoring setup with enhanced metrics
         self.metrics_enabled = self.config.get("enable_metrics", True)
-        self.performance_metrics = self._initialize_performance_tracking()
-        
-        # State management for LangGraph
+        self.performance_metrics = self._initialize_enhanced_performance_tracking()
+        self._start_time = time.time()
+
+        # State management for LangGraph with session tracking
         self.processing_state = {
             "last_input": None,
             "last_output": None,
             "processing_history": [],
-            "current_session_id": None
+            "current_session_id": None,
+            "active_sessions": {}
         }
-        
-        # Error handling and recovery
+
+        # Enhanced error handling and recovery with new exception system
         self.error_recovery = {
             "max_retries": self.config.get("max_retries", 3),
             "retry_delay": self.config.get("retry_delay", 1.0),
-            "circuit_breaker_threshold": self.config.get("circuit_breaker_threshold", 5)
+            "circuit_breaker_threshold": self.config.get("circuit_breaker_threshold", 5),
+            "recovery_strategies": {},
+            "error_patterns": {}
         }
-        
-        # Resource management
+
+        # Resource management with enhanced monitoring
         self._processing_start_time = None
         self._memory_threshold = self.config.get("memory_threshold_mb", 512)
-        
+        self._health_status = "INITIALIZING"
+        self._last_health_check = time.time()
+
         self.logger.info(f"Enhanced {self.agent_name} v{self.agent_version} initialized successfully")
 
     def _setup_production_config(self, user_config: Optional[Dict]) -> Dict[str, Any]:
         """
-        Setup production-ready configuration with environment variable support.
-        
+        Setup enhanced production-ready configuration with environment variable support.
+
         Args:
             user_config: User-provided configuration
-            
+
         Returns:
-            Complete configuration with production defaults
+            Complete configuration with production defaults and enhanced features
         """
-        # Environment-aware defaults
+        # Environment-aware defaults with enhanced configuration
         environment = os.getenv("ENVIRONMENT", "development")
-        
         default_config = {
             # Core settings
             "environment": environment,
             "agent_version": "3.2.0",
             "debug_mode": environment == "development",
-            
+
             # Model configuration (agent-specific)
             "model_name": None,
             "temperature": float(os.getenv("DEFAULT_TEMPERATURE", "0.3")),
             "max_tokens": int(os.getenv("DEFAULT_MAX_TOKENS", "2048")),
             "timeout": int(os.getenv("DEFAULT_TIMEOUT", "30")),
-            
-            # Performance and monitoring
-            "enable_metrics": os.getenv("ENABLE_METRICS", "true").lower() == "true",
+
+            # Performance and monitoring with enhanced metrics
+            "enable_metrics": self._parse_bool(os.getenv("ENABLE_METRICS", "true")),
             "log_level": os.getenv("LOG_LEVEL", "INFO"),
-            "enable_caching": os.getenv("ENABLE_CACHING", "false").lower() == "true",
+            "enable_caching": self._parse_bool(os.getenv("ENABLE_CACHING", "false")),
             "memory_threshold_mb": int(os.getenv("MEMORY_THRESHOLD_MB", "512")),
-            
-            # Error handling
+            "enable_health_monitoring": True,
+            "health_check_interval": 60.0,
+
+            # Enhanced error handling with new exception system
             "max_retries": int(os.getenv("MAX_RETRIES", "3")),
             "retry_delay": float(os.getenv("RETRY_DELAY", "1.0")),
             "circuit_breaker_threshold": int(os.getenv("CIRCUIT_BREAKER_THRESHOLD", "5")),
-            
-            # LangGraph integration
+            "enable_error_recovery": True,
+            "detailed_error_logging": True,
+
+            # LangGraph integration with enhanced state management
             "state_key": None,
             "next_agents": [],
             "parallel_enabled": False,
-            "async_enabled": os.getenv("ASYNC_ENABLED", "true").lower() == "true",
-            
-            # Security and validation
+            "async_enabled": self._parse_bool(os.getenv("ASYNC_ENABLED", "true")),
+            "session_tracking_enabled": True,
+
+            # Security and validation with enhanced checks
             "max_input_length": int(os.getenv("MAX_INPUT_LENGTH", "50000")),
             "sanitize_input": True,
             "validate_output": True,
-            
+            "enable_security_checks": True,
+
+            # Production features
+            "enable_file_logging": environment == "production",
+            "log_rotation": True,
+            "performance_optimization": True,
+            "quality_validation_enabled": True,
+
             # Custom parameters
             "custom_params": {}
         }
-        
-        # Merge with user configuration
+
+        # Merge with user configuration with deep update support
         if user_config:
             for key, value in user_config.items():
                 if key in default_config and isinstance(default_config[key], dict) and isinstance(value, dict):
                     default_config[key].update(value)
                 else:
                     default_config[key] = value
-        
+
         return default_config
 
-    def _setup_structured_logging(self) -> logging.Logger:
+    def _parse_bool(self, value: str) -> bool:
+        """Parse boolean values from environment variables."""
+        return str(value).lower() in ('true', '1', 'yes', 'on', 'enabled')
+
+    def _setup_enhanced_logging(self) -> logging.Logger:
         """
-        Setup structured logging with production-ready formatting.
-        
+        Setup enhanced structured logging with session tracking and production features.
+
         Returns:
-            Configured logger instance with appropriate handlers
+            Configured logger instance with enhanced handlers and formatting
         """
         logger_name = f"agents.{self.agent_name.lower()}"
         logger = logging.getLogger(logger_name)
-        
+
         # Prevent duplicate handlers
         if logger.handlers:
             return logger
-        
-        # Create structured formatter
+
+        # Enhanced structured formatter with session tracking
         formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - [%(funcName)s:%(lineno)d] - %(message)s',
+            '%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - '
+            '[%(session_id)s] - %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
         )
         
-        # Console handler
+        # Add SessionIDFilter to handle missing session_id
+        class SessionIDFilter(logging.Filter):
+            def filter(self, record):
+                if not hasattr(record, 'session_id'):
+                    record.session_id = 'main'
+                return True
+        
+        session_filter = SessionIDFilter()
+
+        # Console handler with enhanced formatting
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
+        console_handler.addFilter(session_filter)
         logger.addHandler(console_handler)
-        
-        # File handler for production
-        if self.config.get("environment") == "production":
+
+        # Enhanced file handler for production with rotation
+        if self.config.get("enable_file_logging", False):
             try:
                 log_dir = Path("logs")
                 log_dir.mkdir(exist_ok=True)
                 
-                file_handler = logging.FileHandler(
-                    log_dir / f"{self.agent_name.lower()}.log"
-                )
+                if self.config.get("log_rotation", True):
+                    from logging.handlers import RotatingFileHandler
+                    file_handler = RotatingFileHandler(
+                        log_dir / f"{self.agent_name.lower()}.log",
+                        maxBytes=10*1024*1024,  # 10MB
+                        backupCount=5
+                    )
+                else:
+                    file_handler = logging.FileHandler(
+                        log_dir / f"{self.agent_name.lower()}.log"
+                    )
+                
                 file_handler.setFormatter(formatter)
+                file_handler.addFilter(session_filter)
                 logger.addHandler(file_handler)
             except Exception as e:
                 print(f"Warning: Could not setup file logging: {e}")
-        
-        # Set logging level
+
+        # Set logging level with enhanced configuration
         log_level = self.config.get('log_level', 'INFO').upper()
         logger.setLevel(getattr(logging, log_level, logging.INFO))
-        
+
         return logger
 
     def _determine_agent_type(self) -> str:
         """
-        Determine agent type based on class name for routing optimization.
-        
+        Determine agent type based on class name for enhanced routing optimization.
+
         Returns:
-            String indicating agent category
+            String indicating agent category with enhanced type mapping
         """
         name_lower = self.agent_name.lower()
-        
-        type_mapping = {
-            "classifier": ["classifier", "bert"],
-            "generator": ["explanation", "llm", "generator"],
-            "recommender": ["source", "credible", "recommender"],
-            "extractor": ["claim", "extractor", "extract"],
-            "analyzer": ["context", "analyzer", "analyse"],
-            "evaluator": ["evidence", "evaluator", "evaluate"]
+        enhanced_type_mapping = {
+            "classifier": ["classifier", "bert", "classification"],
+            "generator": ["explanation", "llm", "generator", "generation"],
+            "recommender": ["source", "credible", "recommender", "recommendation"],
+            "extractor": ["claim", "extractor", "extract", "extraction"],
+            "analyzer": ["context", "analyzer", "analyse", "analysis"],
+            "evaluator": ["evidence", "evaluator", "evaluate", "evaluation"],
+            "validator": ["validator", "validation", "verify"],
+            "monitor": ["monitor", "monitoring", "health", "status"]
         }
-        
-        for agent_type, keywords in type_mapping.items():
+
+        for agent_type, keywords in enhanced_type_mapping.items():
             if any(keyword in name_lower for keyword in keywords):
                 return agent_type
-        
+
         return "generic"
 
-    def _initialize_performance_tracking(self) -> Dict[str, Any]:
+    def _initialize_enhanced_performance_tracking(self) -> Dict[str, Any]:
         """
-        Initialize comprehensive performance tracking system.
-        
+        Initialize comprehensive performance tracking system with enhanced metrics.
+
         Returns:
-            Performance metrics dictionary
+            Performance metrics dictionary with detailed tracking capabilities
         """
         return {
-            # Call statistics
+            # Enhanced call statistics
             "total_calls": 0,
             "successful_calls": 0,
             "error_calls": 0,
             "retry_calls": 0,
-            
-            # Timing metrics
+            "recovered_calls": 0,
+
+            # Enhanced timing metrics with percentiles
             "total_processing_time": 0.0,
             "average_processing_time": 0.0,
             "min_processing_time": float('inf'),
             "max_processing_time": 0.0,
+            "p50_processing_time": 0.0,
             "p95_processing_time": 0.0,
-            
-            # Quality metrics
+            "p99_processing_time": 0.0,
+            "processing_time_samples": [],
+
+            # Enhanced quality metrics
             "confidence_scores": [],
             "average_confidence": 0.0,
             "quality_threshold_met": 0,
-            
-            # Resource metrics
+            "quality_scores": [],
+            "validation_pass_rate": 100.0,
+
+            # Enhanced resource metrics
             "memory_usage_samples": [],
             "peak_memory_usage": 0.0,
+            "current_memory_usage": 0.0,
+            "cpu_usage_samples": [],
             "cache_hits": 0,
             "cache_misses": 0,
-            
-            # Error tracking
+            "cache_effectiveness": 0.0,
+
+            # Enhanced error tracking with new exception integration
             "error_types": {},
             "error_recovery_attempts": 0,
+            "successful_recoveries": 0,
             "circuit_breaker_trips": 0,
             "last_error": None,
-            
-            # Session tracking
+            "error_patterns": {},
+
+            # Enhanced session tracking
             "session_count": 0,
             "concurrent_sessions": 0,
-            
-            # Timestamps
+            "active_sessions": {},
+            "session_duration_samples": [],
+            "average_session_duration": 0.0,
+
+            # Enhanced health and status tracking
+            "health_checks_performed": 0,
+            "health_status_history": [],
+            "uptime_seconds": 0.0,
+            "component_health": {},
+
+            # Enhanced timestamps
             "first_call_time": None,
             "last_call_time": None,
-            "last_reset_time": datetime.now().isoformat()
+            "last_reset_time": datetime.now().isoformat(),
+            "last_health_check_time": datetime.now().isoformat()
         }
+
+    async def process(self, input_data: Dict[str, Any], session_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Enhanced process method with comprehensive error handling, session tracking, and performance monitoring.
+
+        Args:
+            input_data: Input data dictionary to process
+            session_id: Optional session ID for tracking and context
+
+        Returns:
+            Processed result with enhanced metadata and error handling
+        """
+        # Generate session ID if not provided
+        if not session_id:
+            session_id = self._generate_session_id()
+
+        # Update performance metrics
+        self.performance_metrics["total_calls"] += 1
+        if self.performance_metrics["first_call_time"] is None:
+            self.performance_metrics["first_call_time"] = datetime.now().isoformat()
+
+        # Start session tracking
+        session_start_time = time.time()
+        self._start_processing_session(input_data, session_id)
+
+        try:
+            # Enhanced input validation with security checks
+            is_valid, validation_error = self.validate_input(input_data)
+            if not is_valid:
+                raise ValueError(f"Input validation failed: {validation_error}")
+
+            # Call abstract processing method (implemented by subclasses)
+            result = await self._process_internal(input_data, session_id)
+
+            # Enhanced output validation
+            if self.config.get("validate_output", True):
+                self._validate_output(result, session_id)
+
+            # Update success metrics
+            self.performance_metrics["successful_calls"] += 1
+            self._update_quality_metrics(result)
+
+            return self.format_output(result, session_id)
+
+        except Exception as e:
+            # Enhanced error handling with new exception system
+            self.performance_metrics["error_calls"] += 1
+            
+            # Create error context for enhanced exception handling
+            error_context = ErrorContext(
+                session_id=session_id,
+                operation="processing",
+                model_used=self.config.get("model_name"),
+                processing_time=time.time() - session_start_time,
+                input_size=len(str(input_data)) if input_data else 0
+            )
+
+            # Convert to standardized exception
+            standardized_error = handle_llm_explanation_exception(e, error_context)
+            
+            # Log with enhanced context
+            log_exception_with_context(
+                standardized_error, 
+                session_id, 
+                {
+                    'agent_name': self.agent_name,
+                    'agent_type': self.agent_type,
+                    'processing_time': time.time() - session_start_time
+                }
+            )
+
+            # Attempt error recovery if recoverable
+            if is_recoverable_error(standardized_error) and self.config.get("enable_error_recovery", True):
+                recovery_result = await self._attempt_error_recovery(standardized_error, input_data, session_id)
+                if recovery_result:
+                    return recovery_result
+
+            # Update error metrics
+            self._update_error_metrics(standardized_error)
+
+            return self.format_error_output(standardized_error, input_data, session_id)
+
+        finally:
+            # Complete session tracking
+            session_duration = time.time() - session_start_time
+            self._end_processing_session(session_id, session_duration)
+            
+            # Update performance metrics
+            self._update_performance_metrics(session_duration)
+            
+            # Memory cleanup
+            self._cleanup_resources()
+
+    @abstractmethod
+    async def _process_internal(self, input_data: Dict[str, Any], session_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Abstract method for internal processing - must be implemented by subclasses.
+
+        Args:
+            input_data: Validated input data
+            session_id: Session identifier for tracking
+
+        Returns:
+            Processing results dictionary
+        """
+        raise NotImplementedError("Subclasses must implement _process_internal method")
 
     def validate_input(self, input_data: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
         """
         Enhanced input validation with security and safety checks.
-        
+
         Args:
             input_data: Input data dictionary to validate
-            
+
         Returns:
             Tuple of (is_valid, error_message)
         """
@@ -281,11 +472,10 @@ class BaseAgent(ABC):
             
             if not input_data:
                 return False, "Input data cannot be empty"
-            
-            # Text validation if present
+
+            # Enhanced text validation if present
             if 'text' in input_data:
                 text = input_data['text']
-                
                 if not isinstance(text, str):
                     return False, "Text field must be a string"
                 
@@ -296,500 +486,389 @@ class BaseAgent(ABC):
                 max_length = self.config.get("max_input_length", 50000)
                 if len(text) > max_length:
                     return False, f"Text too long (max {max_length} characters)"
-                
-                # Basic security validation
-                if self.config.get("sanitize_input", True):
-                    suspicious_patterns = ['<script>', '<?php', '${', 'javascript:', 'data:']
-                    text_lower = text.lower()
-                    if any(pattern in text_lower for pattern in suspicious_patterns):
-                        return False, "Input contains potentially unsafe content"
-            
-            # Validate nested structures
-            for key, value in input_data.items():
-                if isinstance(value, dict) and len(str(value)) > 10000:
-                    return False, f"Nested object '{key}' too large"
-            
+
+                # Enhanced security validation
+                if self.config.get("enable_security_checks", True):
+                    security_issues = self._check_security_patterns(text)
+                    if security_issues:
+                        return False, f"Security validation failed: {security_issues}"
+
+            # Additional field validations
+            if 'confidence' in input_data:
+                confidence = input_data['confidence']
+                if not isinstance(confidence, (int, float)) or not (0 <= confidence <= 1):
+                    return False, "Confidence must be a number between 0 and 1"
+
+            if 'prediction' in input_data:
+                prediction = input_data['prediction']
+                if not isinstance(prediction, str):
+                    return False, "Prediction must be a string"
+
             return True, None
-            
+
         except Exception as e:
-            self.logger.error(f"Input validation error: {str(e)}")
             return False, f"Validation error: {str(e)}"
 
-    def format_output(self, result: Any, confidence: float = None, 
-                     metadata: Dict = None) -> Dict[str, Any]:
-        """
-        Format standardized output for LangGraph compatibility.
-        
-        Args:
-            result: Main processing result
-            confidence: Confidence score (0.0-1.0)
-            metadata: Additional processing metadata
-            
-        Returns:
-            Standardized output dictionary
-        """
-        # Calculate processing time if available
-        processing_time = getattr(self, '_last_processing_time', None)
-        
-        # Generate output hash for caching/deduplication
-        output_hash = self._generate_output_hash(result)
-        
-        output = {
-            # Standard identification fields
-            "agent_name": self.agent_name,
-            "agent_type": self.agent_type,
-            "agent_version": self.agent_version,
-            
-            # Core result data
-            "result": result,
-            "success": True,
-            "confidence": confidence,
-            
-            # Processing metadata
-            "metadata": {
-                **(metadata or {}),
-                "processing_time_seconds": processing_time,
-                "timestamp": datetime.now().isoformat(),
-                "session_id": self.processing_state.get("current_session_id"),
-                "output_hash": output_hash,
-                "memory_usage_mb": self._get_memory_usage(),
-                "environment": self.config.get("environment")
-            },
-            
-            # LangGraph routing
-            "next_agents": self.config.get("next_agents", []),
-            "state_key": self.config.get("state_key"),
-            "parallel_ready": self.config.get("parallel_enabled", False),
-            
-            # Quality indicators
-            "quality_indicators": {
-                "confidence_above_threshold": confidence > 0.7 if confidence else None,
-                "processing_time_acceptable": processing_time < 10.0 if processing_time else None,
-                "memory_usage_acceptable": self._get_memory_usage() < self._memory_threshold
-            }
-        }
-        
-        # Add validation if enabled
-        if self.config.get("validate_output", True):
-            validation_result = self._validate_output_structure(output)
-            if not validation_result["is_valid"]:
-                output["warnings"] = validation_result["warnings"]
-        
-        return output
+    def _check_security_patterns(self, text: str) -> Optional[str]:
+        """Check for security-related patterns in text input."""
+        if not self.config.get("enable_security_checks", True):
+            return None
 
-    def format_error_output(self, error: Exception, input_data: Dict = None) -> Dict[str, Any]:
-        """
-        Format comprehensive error output with recovery information.
-        
-        Args:
-            error: Exception that occurred
-            input_data: Input data that caused the error
-            
-        Returns:
-            Standardized error output
-        """
-        error_id = self._generate_error_id()
-        
-        return {
-            "agent_name": self.agent_name,
-            "agent_type": self.agent_type,
-            "agent_version": self.agent_version,
-            
-            "result": None,
-            "success": False,
-            
-            "error": {
-                "id": error_id,
-                "type": error.__class__.__name__,
-                "message": str(error),
-                "timestamp": datetime.now().isoformat(),
-                "traceback": traceback.format_exc() if self.config.get("debug_mode") else None,
-                "recovery_suggestions": self._get_error_recovery_suggestions(error)
-            },
-            
-            "metadata": {
-                "input_received": input_data is not None,
-                "retry_recommended": self._should_retry_error(error),
-                "retry_attempts_remaining": self._get_retry_attempts_remaining(),
-                "circuit_breaker_active": self._is_circuit_breaker_active(),
-                "memory_usage_mb": self._get_memory_usage(),
-                "environment": self.config.get("environment")
-            },
-            
-            "recovery_actions": {
-                "immediate_retry": self._should_immediate_retry(error),
-                "delayed_retry": self._should_delayed_retry(error),
-                "fallback_available": self._has_fallback_mechanism(),
-                "manual_intervention_required": self._requires_manual_intervention(error)
-            }
-        }
-
-    def _should_retry_error(self, error: Exception) -> bool:
-        """Determine if error is retryable based on type and context."""
-        retryable_indicators = [
-            "timeout", "connection", "rate limit", "service unavailable",
-            "temporary", "network", "503", "502", "429", "quota"
+        # Basic security pattern detection
+        suspicious_patterns = [
+            r'<script[^>]*>.*?</script>',
+            r'javascript:',
+            r'vbscript:',
+            r'on\w+\s*=',
+            r'union\s+select',
+            r'drop\s+table'
         ]
-        
-        error_str = str(error).lower()
-        error_type = error.__class__.__name__.lower()
-        
-        return any(indicator in error_str or indicator in error_type 
-                  for indicator in retryable_indicators)
 
-    def _get_memory_usage(self) -> float:
-        """Get current memory usage in MB."""
+        import re
+        for pattern in suspicious_patterns:
+            if re.search(pattern, text, re.IGNORECASE | re.DOTALL):
+                return f"Suspicious pattern detected: {pattern}"
+
+        return None
+
+    def _validate_output(self, result: Dict[str, Any], session_id: str) -> bool:
+        """Enhanced output validation with quality checks."""
         try:
-            import psutil
-            process = psutil.Process()
-            return process.memory_info().rss / 1024 / 1024
-        except ImportError:
-            return 0.0
+            if not isinstance(result, dict):
+                raise ValueError("Output must be a dictionary")
 
-    def _generate_output_hash(self, result: Any) -> str:
-        """Generate hash of output for caching and deduplication."""
+            # Check for required fields based on agent type
+            if self.agent_type == "generator" and 'explanation' in result:
+                explanation = result['explanation']
+                if not isinstance(explanation, str) or len(explanation.strip()) < 10:
+                    raise ValueError("Explanation must be a meaningful string")
+
+            return True
+
+        except Exception as e:
+            self.logger.warning(f"Output validation failed: {str(e)}", extra={'session_id': session_id})
+            return False
+
+    async def _attempt_error_recovery(self, error: Exception, input_data: Dict[str, Any], session_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Attempt error recovery using enhanced exception system.
+
+        Args:
+            error: Standardized exception to recover from
+            input_data: Original input data
+            session_id: Session identifier
+
+        Returns:
+            Recovery result if successful, None otherwise
+        """
+        self.performance_metrics["error_recovery_attempts"] += 1
+        
         try:
-            result_str = json.dumps(result, sort_keys=True, default=str)
-            return hashlib.sha256(result_str.encode()).hexdigest()[:16]
-        except:
-            return hashlib.sha256(str(result).encode()).hexdigest()[:16]
-
-    def _generate_error_id(self) -> str:
-        """Generate unique error ID for tracking."""
-        timestamp = str(int(time.time() * 1000))
-        return f"{self.agent_name[:3].upper()}-{timestamp[-8:]}"
-
-    def process_with_recovery(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Process input with built-in error recovery and retry logic.
-        
-        Args:
-            input_data: Input data to process
-            
-        Returns:
-            Processing result with recovery handling
-        """
-        max_retries = self.error_recovery["max_retries"]
-        retry_delay = self.error_recovery["retry_delay"]
-        
-        last_error = None
-        
-        for attempt in range(max_retries + 1):
-            try:
-                # Update session tracking
-                self._start_processing_session(input_data)
+            retry_delay = get_retry_delay(error)
+            if retry_delay and retry_delay > 0:
+                self.logger.info(f"Attempting error recovery with {retry_delay}s delay", extra={'session_id': session_id})
+                await asyncio.sleep(retry_delay)
                 
-                # Process with timing
-                result = self.process(input_data)
+                # Retry the operation
+                result = await self._process_internal(input_data, session_id)
                 
-                # Update success metrics
-                self._update_success_metrics(result.get("confidence"))
-                self._cleanup_processing_session()
+                self.performance_metrics["successful_recoveries"] += 1
+                self.performance_metrics["recovered_calls"] += 1
                 
-                return result
-                
-            except Exception as e:
-                last_error = e
-                self._update_error_metrics(e)
-                
-                if attempt < max_retries and self._should_retry_error(e):
-                    self.logger.warning(f"Attempt {attempt + 1} failed, retrying in {retry_delay}s: {str(e)}")
-                    time.sleep(retry_delay * (attempt + 1))  # Exponential backoff
-                    continue
-                else:
-                    self.logger.error(f"All retry attempts failed: {str(e)}")
-                    break
-        
-        # All retries failed
-        self._cleanup_processing_session()
-        return self.format_error_output(last_error, input_data)
+                return self.format_output(result, session_id)
 
-    async def process_async(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Asynchronous processing wrapper for web applications.
-        
-        Args:
-            input_data: Input data to process
-            
-        Returns:
-            Processing result
-        """
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self.process_with_recovery, input_data)
+        except Exception as recovery_error:
+            self.logger.warning(f"Error recovery failed: {str(recovery_error)}", extra={'session_id': session_id})
 
-    def _start_processing_session(self, input_data: Dict[str, Any]):
-        """Initialize processing session with tracking."""
-        self._processing_start_time = time.time()
-        self.processing_state["last_input"] = input_data
-        self.processing_state["current_session_id"] = self._generate_session_id()
-        
-        if self.metrics_enabled:
-            self.performance_metrics["session_count"] += 1
-            self.performance_metrics["concurrent_sessions"] += 1
-
-    def _cleanup_processing_session(self):
-        """Clean up processing session and update metrics."""
-        if self._processing_start_time:
-            processing_time = time.time() - self._processing_start_time
-            self._last_processing_time = processing_time
-            
-            if self.metrics_enabled:
-                self._update_timing_metrics(processing_time)
-                self.performance_metrics["concurrent_sessions"] = max(0, 
-                    self.performance_metrics["concurrent_sessions"] - 1)
-        
-        # Memory cleanup
-        if self._get_memory_usage() > self._memory_threshold:
-            gc.collect()
+        return None
 
     def _generate_session_id(self) -> str:
-        """Generate unique session ID."""
-        timestamp = str(int(time.time() * 1000000))
-        return f"{self.agent_name[:3]}-{timestamp[-12:]}"
+        """Generate unique session ID for tracking."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        unique_hash = hashlib.md5(f"{self.agent_name}_{timestamp}_{time.time()}".encode()).hexdigest()[:8]
+        return f"{self.agent_name}_{timestamp}_{unique_hash}"
+
+    def _start_processing_session(self, input_data: Dict[str, Any], session_id: str) -> None:
+        """Start processing session with enhanced tracking."""
+        session_info = {
+            'session_id': session_id,
+            'start_time': time.time(),
+            'input_size': len(str(input_data)) if input_data else 0,
+            'agent_name': self.agent_name
+        }
+        
+        self.processing_state["active_sessions"][session_id] = session_info
+        self.processing_state["current_session_id"] = session_id
+        self.performance_metrics["concurrent_sessions"] = len(self.processing_state["active_sessions"])
+
+    def _end_processing_session(self, session_id: str, duration: float) -> None:
+        """End processing session and update metrics."""
+        if session_id in self.processing_state["active_sessions"]:
+            del self.processing_state["active_sessions"][session_id]
+        
+        self.performance_metrics["concurrent_sessions"] = len(self.processing_state["active_sessions"])
+        self.performance_metrics["session_duration_samples"].append(duration)
+        
+        # Calculate average session duration (keep last 100 samples)
+        samples = self.performance_metrics["session_duration_samples"][-100:]
+        self.performance_metrics["average_session_duration"] = sum(samples) / len(samples) if samples else 0.0
+
+    def _update_performance_metrics(self, processing_time: float) -> None:
+        """Update enhanced performance metrics with processing time."""
+        metrics = self.performance_metrics
+        
+        # Update timing metrics
+        metrics["total_processing_time"] += processing_time
+        metrics["average_processing_time"] = metrics["total_processing_time"] / metrics["total_calls"]
+        metrics["min_processing_time"] = min(metrics["min_processing_time"], processing_time)
+        metrics["max_processing_time"] = max(metrics["max_processing_time"], processing_time)
+        metrics["last_call_time"] = datetime.now().isoformat()
+        
+        # Update processing time samples for percentile calculation
+        metrics["processing_time_samples"].append(processing_time)
+        
+        # Keep only last 1000 samples for percentile calculation
+        if len(metrics["processing_time_samples"]) > 1000:
+            metrics["processing_time_samples"] = metrics["processing_time_samples"][-1000:]
+        
+        # Calculate percentiles
+        samples = sorted(metrics["processing_time_samples"])
+        if samples:
+            n = len(samples)
+            metrics["p50_processing_time"] = samples[int(n * 0.5)]
+            metrics["p95_processing_time"] = samples[int(n * 0.95)]
+            metrics["p99_processing_time"] = samples[int(n * 0.99)]
+
+    def _update_quality_metrics(self, result: Dict[str, Any]) -> None:
+        """Update quality metrics based on processing result."""
+        if 'confidence' in result:
+            confidence = result['confidence']
+            if isinstance(confidence, (int, float)):
+                self.performance_metrics["confidence_scores"].append(confidence)
+                
+                # Keep only last 100 samples
+                if len(self.performance_metrics["confidence_scores"]) > 100:
+                    self.performance_metrics["confidence_scores"] = self.performance_metrics["confidence_scores"][-100:]
+                
+                # Calculate average confidence
+                scores = self.performance_metrics["confidence_scores"]
+                self.performance_metrics["average_confidence"] = sum(scores) / len(scores)
+
+    def _update_error_metrics(self, error: Exception) -> None:
+        """Update error metrics with enhanced tracking."""
+        error_type = type(error).__name__
+        self.performance_metrics["error_types"][error_type] = \
+            self.performance_metrics["error_types"].get(error_type, 0) + 1
+        self.performance_metrics["last_error"] = {
+            'type': error_type,
+            'message': str(error),
+            'timestamp': datetime.now().isoformat()
+        }
+
+    def _cleanup_resources(self) -> None:
+        """Enhanced resource cleanup with memory monitoring."""
+        try:
+            # Update memory usage
+            self._update_memory_metrics()
+            
+            # Garbage collection
+            gc.collect()
+            
+            # Clear old processing history (keep last 50 entries)
+            if len(self.processing_state["processing_history"]) > 50:
+                self.processing_state["processing_history"] = self.processing_state["processing_history"][-50:]
+                
+        except Exception as e:
+            self.logger.warning(f"Resource cleanup warning: {str(e)}")
+
+    def _update_memory_metrics(self) -> None:
+        """Update memory usage metrics."""
+        try:
+            # Get current memory usage
+            process = psutil.Process()
+            memory_mb = process.memory_info().rss / 1024 / 1024
+            
+            self.performance_metrics["current_memory_usage"] = memory_mb
+            self.performance_metrics["memory_usage_samples"].append(memory_mb)
+            self.performance_metrics["peak_memory_usage"] = max(
+                self.performance_metrics["peak_memory_usage"], memory_mb
+            )
+            
+            # Keep only last 100 samples
+            if len(self.performance_metrics["memory_usage_samples"]) > 100:
+                self.performance_metrics["memory_usage_samples"] = \
+                    self.performance_metrics["memory_usage_samples"][-100:]
+                    
+        except (ImportError, Exception):
+            # psutil not available or other error - use fallback
+            self.performance_metrics["current_memory_usage"] = 0.0
+
+    def format_output(self, result: Any, session_id: str, confidence: Optional[float] = None, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Format successful processing output with enhanced metadata.
+
+        Args:
+            result: Processing result
+            session_id: Session identifier
+            confidence: Optional confidence score
+            metadata: Optional additional metadata
+
+        Returns:
+            Formatted output dictionary
+        """
+        output = {
+            "success": True,
+            "result": result,
+            "agent_info": {
+                "agent_name": self.agent_name,
+                "agent_type": self.agent_type,
+                "agent_version": self.agent_version
+            },
+            "session_info": {
+                "session_id": session_id,
+                "timestamp": datetime.now().isoformat(),
+                "processing_time": self.performance_metrics.get("average_processing_time", 0.0)
+            },
+            "metadata": metadata or {}
+        }
+        
+        if confidence is not None:
+            output["confidence"] = confidence
+            
+        return output
+
+    def format_error_output(self, error: Exception, input_data: Dict[str, Any], session_id: str) -> Dict[str, Any]:
+        """
+        Format error output with enhanced error information.
+
+        Args:
+            error: Exception that occurred
+            input_data: Original input data
+            session_id: Session identifier
+
+        Returns:
+            Formatted error output dictionary
+        """
+        return {
+            "success": False,
+            "error": {
+                "type": type(error).__name__,
+                "message": str(error),
+                "recoverable": is_recoverable_error(error),
+                "suggestion": get_error_recovery_suggestion(error)
+            },
+            "agent_info": {
+                "agent_name": self.agent_name,
+                "agent_type": self.agent_type,
+                "agent_version": self.agent_version
+            },
+            "session_info": {
+                "session_id": session_id,
+                "timestamp": datetime.now().isoformat()
+            },
+            "input_data_summary": {
+                "size": len(str(input_data)) if input_data else 0,
+                "keys": list(input_data.keys()) if isinstance(input_data, dict) else []
+            }
+        }
 
     def get_comprehensive_status(self) -> Dict[str, Any]:
         """
-        Get comprehensive agent status for monitoring and debugging.
-        
+        Get comprehensive agent status with enhanced health monitoring.
+
         Returns:
-            Detailed status information
+            Complete status dictionary with detailed metrics
         """
-        if not self.metrics_enabled:
-            return {
-                "agent_name": self.agent_name,
-                "status": "metrics_disabled",
-                "version": self.agent_version
-            }
+        total_calls = self.performance_metrics.get("total_calls", 0)
+        successful_calls = self.performance_metrics.get("successful_calls", 0)
+        error_calls = self.performance_metrics.get("error_calls", 0)
         
-        metrics = self.performance_metrics
+        # Calculate health metrics
+        success_rate = (successful_calls / max(total_calls, 1)) * 100
+        error_rate = (error_calls / max(total_calls, 1)) * 100
         
-        # Calculate health indicators
-        error_rate = (metrics["error_calls"] / max(metrics["total_calls"], 1)) * 100
-        avg_time = metrics["average_processing_time"]
-        memory_usage = self._get_memory_usage()
-        
-        # Determine overall status
-        if error_rate > 25:
-            status = "critical"
-        elif error_rate > 10 or avg_time > 15:
-            status = "degraded"
-        elif memory_usage > self._memory_threshold:
-            status = "resource_constrained"
+        # Determine health status
+        if success_rate >= 95 and error_rate <= 5:
+            health_status = "healthy"
+        elif success_rate >= 85 and error_rate <= 15:
+            health_status = "warning"
+        elif success_rate >= 70 and error_rate <= 30:
+            health_status = "degraded"
         else:
-            status = "healthy"
-        
+            health_status = "critical"
+
+        return {
+            "agent_info": {
+                "agent_name": self.agent_name,
+                "agent_type": self.agent_type,
+                "agent_version": self.agent_version,
+                "initialized_at": self.initialized_at,
+                "uptime_seconds": time.time() - self._start_time
+            },
+            "health_status": {
+                "status": health_status,
+                "success_rate": round(success_rate, 2),
+                "error_rate": round(error_rate, 2),
+                "last_health_check": datetime.now().isoformat()
+            },
+            "performance_summary": {
+                "total_calls": total_calls,
+                "successful_calls": successful_calls,
+                "error_calls": error_calls,
+                "average_processing_time": round(self.performance_metrics.get("average_processing_time", 0), 3),
+                "p95_processing_time": round(self.performance_metrics.get("p95_processing_time", 0), 3),
+                "current_memory_mb": round(self.performance_metrics.get("current_memory_usage", 0), 1),
+                "peak_memory_mb": round(self.performance_metrics.get("peak_memory_usage", 0), 1)
+            },
+            "session_info": {
+                "active_sessions": self.performance_metrics.get("concurrent_sessions", 0),
+                "total_sessions": self.performance_metrics.get("session_count", 0),
+                "average_session_duration": round(self.performance_metrics.get("average_session_duration", 0), 3)
+            },
+            "error_summary": {
+                "error_types": self.performance_metrics.get("error_types", {}),
+                "recovery_attempts": self.performance_metrics.get("error_recovery_attempts", 0),
+                "successful_recoveries": self.performance_metrics.get("successful_recoveries", 0),
+                "last_error": self.performance_metrics.get("last_error")
+            },
+            "configuration": {
+                "environment": self.config.get("environment"),
+                "debug_mode": self.config.get("debug_mode"),
+                "metrics_enabled": self.metrics_enabled,
+                "async_enabled": self.config.get("async_enabled"),
+                "health_monitoring": self.config.get("enable_health_monitoring")
+            }
+        }
+
+    def reset_metrics(self) -> None:
+        """Reset performance metrics for fresh monitoring period."""
+        self.performance_metrics = self._initialize_enhanced_performance_tracking()
+        self.logger.info(f"Performance metrics reset for {self.agent_name}")
+
+    def get_health_status(self) -> Dict[str, Any]:
+        """
+        Get current health status for monitoring systems.
+
+        Returns:
+            Health status dictionary for external monitoring
+        """
+        status = self.get_comprehensive_status()
         return {
             "agent_name": self.agent_name,
-            "agent_type": self.agent_type,
-            "agent_version": self.agent_version,
-            "status": status,
-            "environment": self.config.get("environment"),
-            
-            "performance_summary": {
-                "total_calls": metrics["total_calls"],
-                "success_rate": ((metrics["successful_calls"] / max(metrics["total_calls"], 1)) * 100),
-                "error_rate": error_rate,
-                "average_processing_time": avg_time,
-                "current_memory_usage_mb": memory_usage
-            },
-            
-            "health_indicators": {
-                "error_rate_acceptable": error_rate < 10,
-                "response_time_acceptable": avg_time < 10,
-                "memory_usage_acceptable": memory_usage < self._memory_threshold,
-                "circuit_breaker_healthy": metrics["circuit_breaker_trips"] == 0
-            },
-            
-            "operational_info": {
-                "initialized_at": self.initialized_at,
-                "last_call_time": metrics.get("last_call_time"),
-                "concurrent_sessions": metrics["concurrent_sessions"],
-                "cache_hit_rate": self._calculate_cache_hit_rate(),
-                "uptime_hours": self._calculate_uptime_hours()
-            }
+            "status": status["health_status"]["status"],
+            "uptime": status["agent_info"]["uptime_seconds"],
+            "success_rate": status["health_status"]["success_rate"],
+            "error_rate": status["health_status"]["error_rate"],
+            "avg_response_time": status["performance_summary"]["average_processing_time"],
+            "memory_usage": status["performance_summary"]["current_memory_mb"],
+            "active_sessions": status["session_info"]["active_sessions"],
+            "last_check": status["health_status"]["last_health_check"]
         }
-
-    @abstractmethod
-    def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Abstract method that each agent must implement.
-        
-        This method should contain the core processing logic specific to each agent.
-        It should follow this pattern:
-        
-        1. Validate input using self.validate_input()
-        2. Extract required data from input_data
-        3. Perform agent-specific processing
-        4. Calculate confidence score if applicable
-        5. Return formatted output using self.format_output()
-        
-        Args:
-            input_data: Standardized input dictionary
-            
-        Returns:
-            Standardized output dictionary
-        """
-        pass
-
-    def cleanup(self):
-        """Clean up resources and prepare for shutdown."""
-        self.logger.info(f"Cleaning up {self.agent_name}")
-        
-        # Force garbage collection
-        gc.collect()
-        
-        # Log final metrics
-        if self.metrics_enabled:
-            final_status = self.get_comprehensive_status()
-            self.logger.info(f"Final status: {final_status['status']} "
-                           f"({final_status['performance_summary']['total_calls']} total calls)")
-
-    def __enter__(self):
-        """Context manager entry."""
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit with cleanup."""
-        self.cleanup()
-
-    def __str__(self) -> str:
-        """String representation for debugging."""
-        return f"{self.agent_name}(type={self.agent_type}, v{self.agent_version})"
 
     def __repr__(self) -> str:
-        """Detailed representation for debugging."""
-        return (f"{self.__class__.__name__}("
-                f"type='{self.agent_type}', "
-                f"version='{self.agent_version}', "
-                f"environment='{self.config.get('environment')}', "
-                f"metrics_enabled={self.metrics_enabled})")
+        """String representation of the agent."""
+        return f"{self.agent_name}(type={self.agent_type}, version={self.agent_version}, status={self._health_status})"
 
-    # Helper methods for internal use
-    def _validate_output_structure(self, output: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate output structure meets requirements."""
-        required_fields = ["agent_name", "success", "result"]
-        warnings = []
-        
-        for field in required_fields:
-            if field not in output:
-                warnings.append(f"Missing required field: {field}")
-        
-        return {
-            "is_valid": len(warnings) == 0,
-            "warnings": warnings
-        }
-
-    def _update_timing_metrics(self, processing_time: float):
-        """Update timing-related metrics."""
-        if not self.metrics_enabled:
-            return
-            
-        metrics = self.performance_metrics
-        metrics["total_processing_time"] += processing_time
-        metrics["min_processing_time"] = min(metrics["min_processing_time"], processing_time)
-        metrics["max_processing_time"] = max(metrics["max_processing_time"], processing_time)
-        
-        if metrics["total_calls"] > 0:
-            metrics["average_processing_time"] = metrics["total_processing_time"] / metrics["total_calls"]
-        
-        metrics["last_call_time"] = datetime.now().isoformat()
-
-    def _update_success_metrics(self, confidence: float = None):
-        """Update metrics for successful processing."""
-        if not self.metrics_enabled:
-            return
-            
-        metrics = self.performance_metrics
-        metrics["total_calls"] += 1
-        metrics["successful_calls"] += 1
-        
-        if confidence is not None:
-            metrics["confidence_scores"].append(confidence)
-            metrics["average_confidence"] = sum(metrics["confidence_scores"]) / len(metrics["confidence_scores"])
-            
-            if confidence > 0.7:
-                metrics["quality_threshold_met"] += 1
-
-    def _update_error_metrics(self, error: Exception):
-        """Update metrics for error tracking."""
-        if not self.metrics_enabled:
-            return
-            
-        metrics = self.performance_metrics
-        metrics["total_calls"] += 1
-        metrics["error_calls"] += 1
-        
-        error_type = error.__class__.__name__
-        metrics["error_types"][error_type] = metrics["error_types"].get(error_type, 0) + 1
-        
-        metrics["last_error"] = {
-            "type": error_type,
-            "message": str(error),
-            "timestamp": datetime.now().isoformat()
-        }
-
-    def _calculate_cache_hit_rate(self) -> float:
-        """Calculate cache hit rate percentage."""
-        if not self.metrics_enabled:
-            return 0.0
-            
-        metrics = self.performance_metrics
-        total_cache_requests = metrics["cache_hits"] + metrics["cache_misses"]
-        
-        if total_cache_requests == 0:
-            return 0.0
-            
-        return (metrics["cache_hits"] / total_cache_requests) * 100
-
-    def _calculate_uptime_hours(self) -> float:
-        """Calculate agent uptime in hours."""
-        try:
-            init_time = datetime.fromisoformat(self.initialized_at)
-            uptime = datetime.now() - init_time
-            return uptime.total_seconds() / 3600
-        except:
-            return 0.0
-
-    def _get_error_recovery_suggestions(self, error: Exception) -> List[str]:
-        """Get contextual error recovery suggestions."""
-        suggestions = []
-        error_str = str(error).lower()
-        
-        if "timeout" in error_str:
-            suggestions.append("Increase timeout value or optimize processing")
-        if "memory" in error_str:
-            suggestions.append("Reduce input size or restart agent")
-        if "rate limit" in error_str:
-            suggestions.append("Implement exponential backoff or reduce request frequency")
-        if "connection" in error_str:
-            suggestions.append("Check network connectivity and service availability")
-        
-        return suggestions if suggestions else ["Contact system administrator"]
-
-    def _get_retry_attempts_remaining(self) -> int:
-        """Get number of retry attempts remaining."""
-        return max(0, self.error_recovery["max_retries"] - 
-                  self.performance_metrics.get("retry_calls", 0))
-
-    def _is_circuit_breaker_active(self) -> bool:
-        """Check if circuit breaker is currently active."""
-        return (self.performance_metrics.get("circuit_breaker_trips", 0) > 
-                self.error_recovery["circuit_breaker_threshold"])
-
-    def _should_immediate_retry(self, error: Exception) -> bool:
-        """Determine if immediate retry is recommended."""
-        transient_errors = ["ConnectionError", "TimeoutError", "TemporaryFailure"]
-        return error.__class__.__name__ in transient_errors
-
-    def _should_delayed_retry(self, error: Exception) -> bool:
-        """Determine if delayed retry is recommended."""
-        return "rate limit" in str(error).lower() or "quota" in str(error).lower()
-
-    def _has_fallback_mechanism(self) -> bool:
-        """Check if agent has fallback processing capability."""
-        return hasattr(self, '_fallback_process') and callable(self._fallback_process)
-
-    def _requires_manual_intervention(self, error: Exception) -> bool:
-        """Determine if error requires manual intervention."""
-        critical_errors = ["ConfigurationError", "AuthenticationError", "PermissionError"]
-        return error.__class__.__name__ in critical_errors
+    def __str__(self) -> str:
+        """Human-readable string representation."""
+        return f"Enhanced {self.agent_name} v{self.agent_version} - {self.agent_type} agent"

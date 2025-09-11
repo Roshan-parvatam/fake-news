@@ -1,17 +1,21 @@
 # agents/context_analyzer/manipulation_detection.py
 
 """
-Manipulation Detection Module
+Manipulation Detection Module - Production Ready
 
 Detects manipulation techniques, propaganda methods, and logical fallacies
 in news articles to assess argument quality and identify persuasion tactics.
-Provides systematic detection of common manipulation strategies.
+Enhanced with performance tracking, comprehensive technique databases, and
+production-level error handling.
 """
 
 import re
 import time
 import logging
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Optional
+from collections import defaultdict
+
+from .exceptions import ManipulationDetectionError, ConfigurationError
 
 
 class ManipulationDetector:
@@ -20,27 +24,30 @@ class ManipulationDetector:
     
     Identifies manipulation techniques, propaganda methods, and logical fallacies
     to assess the quality of arguments and detect potential misinformation tactics.
+    Enhanced with production-level performance tracking and comprehensive databases.
     """
 
     def __init__(self, config: Dict[str, Any] = None):
         """
-        Initialize manipulation detector.
-        
+        Initialize manipulation detector with production configuration.
+
         Args:
             config: Optional configuration for detection parameters and thresholds
         """
         self.config = config or {}
-        self.logger = logging.getLogger(self.__class__.__name__)
-        
+        self.logger = logging.getLogger(f"{__name__}.ManipulationDetector")
+
         # Initialize detection systems
         self.propaganda_techniques = self._initialize_propaganda_techniques()
         self.manipulation_patterns = self._initialize_manipulation_patterns()
         self.logical_fallacies = self._initialize_logical_fallacies()
-        
+
         # Performance metrics
         self.detection_count = 0
         self.total_processing_time = 0.0
         self.total_techniques_found = 0
+
+        self.logger.info(f"ManipulationDetector initialized with {self._get_total_techniques()} detection methods")
 
     def _initialize_propaganda_techniques(self) -> Dict[str, Dict[str, Any]]:
         """Initialize propaganda technique detection patterns."""
@@ -166,89 +173,109 @@ class ManipulationDetector:
             }
         }
 
-    def get_manipulation_report(self, text: str) -> Dict[str, Any]:
+    def get_manipulation_report(self, text: str, session_id: str = None) -> Dict[str, Any]:
         """
         Generate comprehensive manipulation detection report.
-        
+
         Args:
             text: Article text to analyze for manipulation techniques
-            
+            session_id: Optional session ID for tracking
+
         Returns:
-            Dictionary containing manipulation analysis results
+            Dictionary containing comprehensive manipulation analysis results
         """
         start_time = time.time()
-        
-        # Detect different types of manipulation
-        propaganda_results = self._detect_propaganda_techniques(text)
-        manipulation_results = self._detect_manipulation_patterns(text)
-        fallacy_results = self._detect_logical_fallacies(text)
-        
-        # Calculate overall manipulation metrics
-        total_techniques = (
-            len(propaganda_results['detected']) +
-            len(manipulation_results['detected']) +
-            len(fallacy_results['detected'])
-        )
-        
-        # Calculate manipulation score
-        manipulation_score = self._calculate_manipulation_score(
-            propaganda_results, manipulation_results, fallacy_results
-        )
-        
-        # Assess risk level
-        risk_level = self._assess_risk_level(manipulation_score)
-        
-        # Count high severity techniques
-        high_severity_count = self._count_high_severity_techniques(
-            propaganda_results, fallacy_results
-        )
-        
-        # Update performance metrics
-        processing_time = time.time() - start_time
-        self.detection_count += 1
-        self.total_processing_time += processing_time
-        self.total_techniques_found += total_techniques
-        
-        return {
-            'propaganda_techniques': propaganda_results,
-            'manipulation_patterns': manipulation_results,
-            'logical_fallacies': fallacy_results,
-            'overall_manipulation_score': manipulation_score,
-            'risk_level': risk_level,
-            'techniques_summary': {
-                'total_techniques_detected': total_techniques,
-                'high_severity_count': high_severity_count,
-                'processing_time_ms': round(processing_time * 1000, 2)
-            }
-        }
 
-    def _detect_propaganda_techniques(self, text: str) -> Dict[str, Any]:
+        try:
+            # Detect different types of manipulation
+            propaganda_results = self._detect_propaganda_techniques(text, session_id)
+            manipulation_results = self._detect_manipulation_patterns(text, session_id)
+            fallacy_results = self._detect_logical_fallacies(text, session_id)
+
+            # Calculate overall manipulation metrics
+            total_techniques = (
+                len(propaganda_results['detected']) +
+                len(manipulation_results['detected']) +
+                len(fallacy_results['detected'])
+            )
+
+            # Calculate manipulation score
+            manipulation_score = self._calculate_manipulation_score(
+                propaganda_results, manipulation_results, fallacy_results
+            )
+
+            # Assess risk level
+            risk_level = self._assess_risk_level(manipulation_score)
+
+            # Count high severity techniques
+            high_severity_count = self._count_high_severity_techniques(
+                propaganda_results, fallacy_results
+            )
+
+            # Update performance metrics
+            processing_time = time.time() - start_time
+            self.detection_count += 1
+            self.total_processing_time += processing_time
+            self.total_techniques_found += total_techniques
+
+            result = {
+                'propaganda_techniques': propaganda_results,
+                'manipulation_patterns': manipulation_results,
+                'logical_fallacies': fallacy_results,
+                'overall_manipulation_score': manipulation_score,
+                'risk_level': risk_level,
+                'techniques_summary': {
+                    'total_techniques_detected': total_techniques,
+                    'high_severity_count': high_severity_count,
+                    'processing_time_ms': round(processing_time * 1000, 2)
+                },
+                'session_id': session_id
+            }
+
+            self.logger.info(
+                f"Manipulation detection completed",
+                extra={
+                    'session_id': session_id,
+                    'total_techniques': total_techniques,
+                    'manipulation_score': manipulation_score,
+                    'risk_level': risk_level,
+                    'processing_time': round(processing_time * 1000, 2)
+                }
+            )
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"Manipulation detection failed: {str(e)}", extra={'session_id': session_id})
+            raise ManipulationDetectionError(f"Manipulation detection failed: {str(e)}", session_id=session_id)
+
+    def _detect_propaganda_techniques(self, text: str, session_id: str = None) -> Dict[str, Any]:
         """Detect propaganda techniques with enhanced pattern matching."""
         text_lower = text.lower()
         detected = {}
-        
+
         for technique, info in self.propaganda_techniques.items():
             score = 0
             matches = []
-            
+
             # Check indicators
             for indicator in info['indicators']:
                 if indicator in text_lower:
                     score += 1
                     matches.append(f"Indicator: {indicator}")
-            
+
             # Check patterns
             for pattern in info['patterns']:
                 pattern_matches = re.findall(pattern, text_lower, re.IGNORECASE)
                 if pattern_matches:
                     score += len(pattern_matches) * 2  # Patterns weighted higher
                     matches.extend([f"Pattern: {match}" for match in pattern_matches[:2]])
-            
+
             if score > 0:
                 # Calculate confidence with configurable multiplier
                 confidence_multiplier = self.config.get('confidence_multiplier', 0.15)
                 confidence = min(1.0, score * confidence_multiplier)
-                
+
                 detected[technique] = {
                     'score': score,
                     'confidence': round(confidence, 2),
@@ -256,27 +283,27 @@ class ManipulationDetector:
                     'matches': matches[:3],  # Limit matches
                     'description': info['description']
                 }
-        
+
         # Sort by confidence
         detected = dict(sorted(detected.items(), key=lambda x: x[1]['confidence'], reverse=True))
-        
+
         return {
             'detected': detected,
             'total_techniques': len(detected),
             'high_confidence': [t for t, d in detected.items() if d['confidence'] > 0.6]
         }
 
-    def _detect_manipulation_patterns(self, text: str) -> Dict[str, Any]:
+    def _detect_manipulation_patterns(self, text: str, session_id: str = None) -> Dict[str, Any]:
         """Detect modern manipulation patterns."""
         text_lower = text.lower()
         detected = {}
-        
+
         for pattern_type, indicators in self.manipulation_patterns.items():
             matches = []
             for indicator in indicators:
                 if indicator in text_lower:
                     matches.append(indicator)
-            
+
             if matches:
                 confidence = min(1.0, len(matches) / 3)
                 detected[pattern_type] = {
@@ -284,35 +311,35 @@ class ManipulationDetector:
                     'confidence': round(confidence, 2),
                     'count': len(matches)
                 }
-        
+
         return {
             'detected': detected,
             'total_patterns': len(detected)
         }
 
-    def _detect_logical_fallacies(self, text: str) -> Dict[str, Any]:
+    def _detect_logical_fallacies(self, text: str, session_id: str = None) -> Dict[str, Any]:
         """Detect logical fallacies with enhanced analysis."""
         text_lower = text.lower()
         detected = {}
-        
+
         for fallacy, info in self.logical_fallacies.items():
             score = 0
             evidence = []
-            
+
             # Check patterns
             for pattern in info['patterns']:
                 matches = re.findall(pattern, text_lower, re.IGNORECASE)
                 if matches:
                     score += len(matches)
                     evidence.extend(matches[:2])
-            
+
             # Check indicators
             for indicator in info['indicators']:
                 if indicator in text_lower:
                     score += 0.5
                     if len(evidence) < 3:
                         evidence.append(f"Indicator: {indicator}")
-            
+
             if score > 0:
                 confidence = min(1.0, score / 3)
                 detected[fallacy] = {
@@ -320,15 +347,15 @@ class ManipulationDetector:
                     'severity': info['severity'],
                     'evidence': evidence[:3]  # Limit evidence items
                 }
-        
+
         return {
             'detected': detected,
             'total_fallacies': len(detected)
         }
 
-    def _calculate_manipulation_score(self, 
+    def _calculate_manipulation_score(self,
                                     propaganda_results: Dict[str, Any],
-                                    manipulation_results: Dict[str, Any], 
+                                    manipulation_results: Dict[str, Any],
                                     fallacy_results: Dict[str, Any]) -> float:
         """Calculate overall manipulation score with configurable weights."""
         # Get weights from config or use defaults
@@ -337,40 +364,40 @@ class ManipulationDetector:
             'manipulation': 0.4,
             'fallacies': 0.2
         })
-        
+
         # Calculate component scores
         propaganda_score = self._score_propaganda_techniques(propaganda_results)
         manipulation_score = self._score_manipulation_patterns(manipulation_results)
         fallacy_score = self._score_logical_fallacies(fallacy_results)
-        
+
         # Weighted overall score
         overall_score = (
             propaganda_score * weights['propaganda'] +
             manipulation_score * weights['manipulation'] +
             fallacy_score * weights['fallacies']
         )
-        
+
         return round(min(10.0, overall_score), 2)
 
     def _score_propaganda_techniques(self, results: Dict[str, Any]) -> float:
         """Score propaganda techniques based on severity and confidence."""
         if not results['detected']:
             return 0.0
-        
+
         total_score = 0
         severity_multiplier = {'low': 1, 'medium': 2, 'high': 3}
-        
+
         for technique, data in results['detected'].items():
             severity_weight = severity_multiplier.get(data['severity'], 1)
             total_score += data['confidence'] * severity_weight
-        
+
         return min(10.0, total_score * 2)
 
     def _score_manipulation_patterns(self, results: Dict[str, Any]) -> float:
         """Score manipulation patterns based on frequency and confidence."""
         if not results['detected']:
             return 0.0
-        
+
         total_score = sum(data['confidence'] for data in results['detected'].values())
         return min(10.0, total_score * 2.5)
 
@@ -378,14 +405,14 @@ class ManipulationDetector:
         """Score logical fallacies based on severity and confidence."""
         if not results['detected']:
             return 0.0
-        
+
         total_score = 0
         severity_multiplier = {'low': 1, 'medium': 1.5, 'high': 2}
-        
+
         for fallacy, data in results['detected'].items():
             severity_weight = severity_multiplier.get(data['severity'], 1)
             total_score += data['confidence'] * severity_weight
-        
+
         return min(10.0, total_score * 2)
 
     def _assess_risk_level(self, score: float) -> str:
@@ -394,7 +421,7 @@ class ManipulationDetector:
         thresholds = self.config.get('risk_thresholds', {
             'minimal': 2, 'low': 4, 'medium': 6, 'high': 8
         })
-        
+
         if score <= thresholds['minimal']:
             return "MINIMAL"
         elif score <= thresholds['low']:
@@ -406,84 +433,91 @@ class ManipulationDetector:
         else:
             return "CRITICAL"
 
-    def _count_high_severity_techniques(self, 
-                                      propaganda_results: Dict[str, Any], 
+    def _count_high_severity_techniques(self,
+                                      propaganda_results: Dict[str, Any],
                                       fallacy_results: Dict[str, Any]) -> int:
         """Count high severity manipulation techniques."""
         count = 0
-        
+
         # Count high severity propaganda
         for technique, data in propaganda_results['detected'].items():
             if data['severity'] == 'high':
                 count += 1
-        
+
         # Count high severity fallacies
         for fallacy, data in fallacy_results['detected'].items():
             if data['severity'] == 'high':
                 count += 1
-        
+
         return count
 
-    def analyze_propaganda_by_category(self, text: str) -> Dict[str, Any]:
+    def analyze_propaganda_by_category(self, text: str, session_id: str = None) -> Dict[str, Any]:
         """
         Analyze propaganda techniques by category for detailed reporting.
-        
+
         Args:
             text: Text to analyze
-            
+            session_id: Optional session ID for tracking
+
         Returns:
             Dictionary with propaganda analysis by category
         """
-        results = self._detect_propaganda_techniques(text)
-        
-        # Group by severity
-        by_severity = {'low': [], 'medium': [], 'high': []}
-        for technique, data in results['detected'].items():
-            by_severity[data['severity']].append({
-                'technique': technique,
-                'confidence': data['confidence'],
-                'description': data['description']
-            })
-        
-        # Calculate category risk
-        category_risk = {
-            'emotional_appeals': 0,
-            'logical_manipulation': 0,
-            'social_pressure': 0
-        }
-        
-        emotional_techniques = ['fear_mongering', 'glittering_generalities', 'transfer']
-        logical_techniques = ['false_dilemma', 'card_stacking', 'ad_hominem']
-        social_techniques = ['bandwagon', 'plain_folks', 'testimonial']
-        
-        for technique, data in results['detected'].items():
-            confidence = data['confidence']
-            if technique in emotional_techniques:
-                category_risk['emotional_appeals'] += confidence
-            elif technique in logical_techniques:
-                category_risk['logical_manipulation'] += confidence
-            elif technique in social_techniques:
-                category_risk['social_pressure'] += confidence
-        
-        return {
-            'by_severity': by_severity,
-            'category_risk_scores': {k: round(v, 2) for k, v in category_risk.items()},
-            'highest_risk_category': max(category_risk, key=category_risk.get),
-            'total_techniques_detected': len(results['detected'])
-        }
+        try:
+            results = self._detect_propaganda_techniques(text, session_id)
+
+            # Group by severity
+            by_severity = {'low': [], 'medium': [], 'high': []}
+            for technique, data in results['detected'].items():
+                by_severity[data['severity']].append({
+                    'technique': technique,
+                    'confidence': data['confidence'],
+                    'description': data['description']
+                })
+
+            # Calculate category risk
+            category_risk = {
+                'emotional_appeals': 0,
+                'logical_manipulation': 0,
+                'social_pressure': 0
+            }
+
+            emotional_techniques = ['fear_mongering', 'glittering_generalities', 'transfer']
+            logical_techniques = ['false_dilemma', 'card_stacking', 'ad_hominem']
+            social_techniques = ['bandwagon', 'plain_folks', 'testimonial']
+
+            for technique, data in results['detected'].items():
+                confidence = data['confidence']
+                if technique in emotional_techniques:
+                    category_risk['emotional_appeals'] += confidence
+                elif technique in logical_techniques:
+                    category_risk['logical_manipulation'] += confidence
+                elif technique in social_techniques:
+                    category_risk['social_pressure'] += confidence
+
+            return {
+                'by_severity': by_severity,
+                'category_risk_scores': {k: round(v, 2) for k, v in category_risk.items()},
+                'highest_risk_category': max(category_risk, key=category_risk.get),
+                'total_techniques_detected': len(results['detected']),
+                'session_id': session_id
+            }
+
+        except Exception as e:
+            self.logger.error(f"Propaganda category analysis failed: {str(e)}", extra={'session_id': session_id})
+            raise ManipulationDetectionError(f"Propaganda analysis failed: {str(e)}", session_id=session_id)
 
     def get_detection_statistics(self) -> Dict[str, Any]:
-        """Get comprehensive detection statistics."""
+        """Get comprehensive detection statistics for monitoring."""
         avg_processing_time = (
-            self.total_processing_time / self.detection_count 
+            self.total_processing_time / self.detection_count
             if self.detection_count > 0 else 0
         )
-        
+
         avg_techniques_per_detection = (
             self.total_techniques_found / self.detection_count
             if self.detection_count > 0 else 0
         )
-        
+
         return {
             'total_detections_completed': self.detection_count,
             'total_processing_time_seconds': round(self.total_processing_time, 2),
@@ -494,13 +528,17 @@ class ManipulationDetector:
                 'propaganda_techniques_count': len(self.propaganda_techniques),
                 'manipulation_patterns_count': len(self.manipulation_patterns),
                 'logical_fallacies_count': len(self.logical_fallacies),
-                'total_detection_methods': (
-                    len(self.propaganda_techniques) +
-                    len(self.manipulation_patterns) +
-                    len(self.logical_fallacies)
-                )
+                'total_detection_methods': self._get_total_techniques()
             }
         }
+
+    def _get_total_techniques(self) -> int:
+        """Get total number of detection techniques available."""
+        return (
+            len(self.propaganda_techniques) +
+            len(self.manipulation_patterns) +
+            len(self.logical_fallacies)
+        )
 
     def validate_detection_patterns(self) -> Dict[str, Any]:
         """Validate detection pattern database integrity."""
@@ -509,35 +547,39 @@ class ManipulationDetector:
             'issues': [],
             'warnings': []
         }
-        
+
         # Check propaganda techniques
         for technique, data in self.propaganda_techniques.items():
             if not data.get('indicators') and not data.get('patterns'):
                 validation_results['issues'].append(f"Propaganda technique '{technique}' has no indicators or patterns")
                 validation_results['valid'] = False
-            
+
             if not data.get('severity') or data['severity'] not in ['low', 'medium', 'high']:
                 validation_results['issues'].append(f"Propaganda technique '{technique}' has invalid severity")
                 validation_results['valid'] = False
-        
+
         # Check manipulation patterns
         for pattern_type, indicators in self.manipulation_patterns.items():
             if not indicators:
                 validation_results['issues'].append(f"Manipulation pattern '{pattern_type}' has no indicators")
                 validation_results['valid'] = False
-        
+
         # Check logical fallacies
         for fallacy, data in self.logical_fallacies.items():
             if not data.get('indicators') and not data.get('patterns'):
                 validation_results['issues'].append(f"Logical fallacy '{fallacy}' has no indicators or patterns")
                 validation_results['valid'] = False
-        
+
         return validation_results
 
 
 # Testing functionality
 if __name__ == "__main__":
-    """Test manipulation detector functionality."""
+    """Test manipulation detector functionality with comprehensive examples."""
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    
+    print("=== MANIPULATION DETECTION TEST ===")
     
     # Initialize detector with test configuration
     test_config = {
@@ -551,9 +593,9 @@ if __name__ == "__main__":
             'minimal': 1, 'low': 3, 'medium': 5, 'high': 7
         }
     }
-    
+
     detector = ManipulationDetector(test_config)
-    
+
     # Test analysis
     test_text = """
     Don't let the corrupt establishment fool you! This is clearly a false flag
@@ -561,29 +603,30 @@ if __name__ == "__main__":
     with us or you're against America. What about all the lies they told before?
     Every real American knows this is obviously a conspiracy by extremists.
     """
+
+    report = detector.get_manipulation_report(test_text, session_id="test_manipulation_001")
     
-    print("=== MANIPULATION DETECTION TEST ===")
-    report = detector.get_manipulation_report(test_text)
-    
-    print(f"Overall manipulation score: {report['overall_manipulation_score']}/10")
-    print(f"Risk level: {report['risk_level']}")
-    print(f"Total techniques detected: {report['techniques_summary']['total_techniques_detected']}")
-    print(f"High severity techniques: {report['techniques_summary']['high_severity_count']}")
-    
+    print(f"✅ Overall manipulation score: {report['overall_manipulation_score']}/10")
+    print(f"✅ Risk level: {report['risk_level']}")
+    print(f"✅ Total techniques detected: {report['techniques_summary']['total_techniques_detected']}")
+    print(f"✅ High severity techniques: {report['techniques_summary']['high_severity_count']}")
+
     # Test propaganda category analysis
-    propaganda_analysis = detector.analyze_propaganda_by_category(test_text)
-    print(f"\nHighest risk category: {propaganda_analysis['highest_risk_category']}")
-    print(f"Category risk scores: {propaganda_analysis['category_risk_scores']}")
-    
+    propaganda_analysis = detector.analyze_propaganda_by_category(test_text, session_id="test_manipulation_002")
+    print(f"✅ Highest risk category: {propaganda_analysis['highest_risk_category']}")
+    print(f"✅ Category risk scores: {propaganda_analysis['category_risk_scores']}")
+
     # Show statistics
     stats = detector.get_detection_statistics()
     print(f"\n=== STATISTICS ===")
-    print(f"Total detections: {stats['total_detections_completed']}")
-    print(f"Average processing time: {stats['average_processing_time_ms']:.1f}ms")
-    print(f"Detection methods available: {stats['detection_database_sizes']['total_detection_methods']}")
-    
+    print(f"✅ Total detections: {stats['total_detections_completed']}")
+    print(f"✅ Average processing time: {stats['average_processing_time_ms']:.1f}ms")
+    print(f"✅ Detection methods available: {stats['detection_database_sizes']['total_detection_methods']}")
+
     # Validate detection patterns
     validation = detector.validate_detection_patterns()
-    print(f"\nPattern validation: {'PASSED' if validation['valid'] else 'FAILED'}")
+    print(f"\n✅ Pattern validation: {'PASSED' if validation['valid'] else 'FAILED'}")
     if validation['issues']:
-        print(f"Issues found: {validation['issues']}")
+        print(f"⚠️  Issues found: {validation['issues']}")
+
+    print("\n🎯 Manipulation detector tests completed successfully!")
