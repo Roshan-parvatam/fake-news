@@ -377,8 +377,10 @@ class TextPreprocessor:
 
     def _validate_input_text(self, text: str, session_id: Optional[str] = None):
         """Enhanced input validation with security checks."""
-        if len(text) > self.max_length * 2:  # Allow some overhead before processing
-            raise ValueError(f"Input text too long: {len(text)} chars (max: {self.max_length * 2})")
+        # Use a more reasonable limit for text processing (allow longer articles)
+        max_chars = self.max_length * 8  # Allow 8x the token limit for character count
+        if len(text) > max_chars:
+            raise ValueError(f"Input text too long: {len(text)} chars (max: {max_chars})")
         
         if len(text.strip()) < self.min_length:
             raise ValueError(f"Input text too short: {len(text.strip())} chars (min: {self.min_length})")

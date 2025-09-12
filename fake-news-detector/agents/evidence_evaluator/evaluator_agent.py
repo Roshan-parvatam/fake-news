@@ -231,7 +231,8 @@ class EvidenceEvaluatorAgent(BaseAgent):
                 self.logger.warning(error_msg, extra={'session_id': session_id})
                 return self.format_error_output(
                     InputValidationError(error_msg), 
-                    input_data
+                    input_data,
+                    session_id
                 )
             
             # Extract input data
@@ -306,7 +307,7 @@ class EvidenceEvaluatorAgent(BaseAgent):
                     'error_type': type(e).__name__
                 }
             )
-            return self.format_error_output(e, input_data)
+            return self.format_error_output(e, input_data, session_id)
 
     def evaluate_evidence(self,
                          article_text: str,
@@ -382,7 +383,8 @@ class EvidenceEvaluatorAgent(BaseAgent):
         self._update_metrics(verification_sources, fallacy_report)
         
         return {
-            'verification_sources': verification_sources,
+            'verification_links': verification_sources,  # Map verification_sources to verification_links for API compatibility
+            'verification_sources': verification_sources,  # Keep both for backward compatibility
             'source_quality_analysis': source_quality_analysis,
             'logical_consistency_analysis': logical_consistency_analysis,
             'evidence_gaps_analysis': evidence_gaps_analysis,
@@ -423,15 +425,23 @@ class EvidenceEvaluatorAgent(BaseAgent):
                     response_text = response.candidates[0].content.parts[0].text
                     verification_sources = self._parse_verification_sources(response_text)
                     
-                    # Validate URL specificity
+                    # Validate URL specificity using URLValidator (less restrictive)
                     validated_sources = []
-                    for source in verification_sources:
+                    self.logger.info(f"Processing {len(verification_sources)} verification sources")
+                    for i, source in enumerate(verification_sources):
                         url = source.get('url', '')
-                        if self.prompt_validator.validate_url_specificity(url):
+                        self.logger.info(f"Source {i+1}: {url}")
+                        # Use URLValidator instead of PromptValidator for less restrictive validation
+                        from .validators import URLValidator
+                        url_validator = URLValidator()
+                        url_result = url_validator.validate_url_specificity(url)
+                        if url_result.is_valid:
                             source['quality_score'] = self._calculate_source_quality_score(source)
                             validated_sources.append(source)
+                            self.logger.info(f"✅ Accepted URL: {url}")
                         else:
-                            self.logger.debug(f"Rejected generic URL: {url}")
+                            error_msg = url_result.errors[0] if url_result.errors else 'Unknown error'
+                            self.logger.warning(f"❌ Rejected URL: {url} - {error_msg}")
                     
                     self.logger.info(
                         f"Generated {len(validated_sources)} verification sources",
@@ -473,6 +483,10 @@ class EvidenceEvaluatorAgent(BaseAgent):
                 
                 sources = [claim.get('source', 'Not specified') for claim in claims]
                 sources = [s for s in sources if s != 'Not specified'][:10]
+                
+                # Provide fallback if no sources available
+                if not sources:
+                    sources = ['No specific sources identified in claims']
                 
                 prompt = get_prompt_template(
                     'source_quality',

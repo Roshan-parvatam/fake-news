@@ -136,6 +136,9 @@ class LLMExplanationAgent(BaseAgent):
         self.agent_name = "llm_explanation"
         super().__init__(explanation_config)
 
+        # Initialize logger first
+        self.logger = logging.getLogger(self.__class__.__name__)
+
         # Enhanced AI Model Configuration
         self.model_name = self.config.get('model_name', 'gemini-1.5-pro')
         self.temperature = self.config.get('temperature', 0.3)
@@ -188,8 +191,7 @@ class LLMExplanationAgent(BaseAgent):
         self.request_count = 0
         self.session_start_time = time.time()
 
-        # Enhanced logging
-        self.logger = logging.getLogger(self.__class__.__name__)
+        # Log successful initialization
         self.logger.info(f"Enhanced LLM Explanation Agent initialized - Model: {self.model_name}")
 
     def _load_api_key(self, system_settings) -> str:

@@ -27,6 +27,21 @@ from datetime import datetime
 import hashlib
 from enum import Enum
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    # Load .env file from fake-news-detector directory
+    env_path = Path(__file__).parent.parent / '.env'
+    if env_path.exists():
+        load_dotenv(env_path)
+        logging.getLogger(__name__).debug(f"✅ Loaded environment variables from {env_path}")
+    else:
+        # Fallback to default .env loading
+        load_dotenv()
+        logging.getLogger(__name__).debug("✅ Loaded environment variables from default .env")
+except ImportError:
+    logging.getLogger(__name__).warning("⚠️ python-dotenv not available - using system environment variables only")
+
 
 class Environment(Enum):
     """Supported environments with validation."""

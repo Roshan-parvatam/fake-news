@@ -256,32 +256,42 @@ EXPLANATION_CONFIGS = {
 
 # Enhanced convenience functions for quick access
 
-def create_explanation_agent(config: Optional[Union[str, Dict[str, Any]]] = None, 
+def create_explanation_agent(config: Optional[Union[str, Dict[str, Any]]] = None,
                            session_id: str = None) -> LLMExplanationAgent:
     """
     Create LLM Explanation Agent with enhanced configuration and validation.
-
-    Args:
-        config: Configuration name (str) or dictionary, or None for default
-        session_id: Optional session ID for tracking
-
-    Returns:
-        Configured LLMExplanationAgent instance ready for production use
-
-    Examples:
-        >>> # Use default configuration
-        >>> agent = create_explanation_agent()
-        
-        >>> # Use named configuration
-        >>> agent = create_explanation_agent('comprehensive')
-        
-        >>> # Use custom configuration
-        >>> custom_config = {'temperature': 0.2, 'max_tokens': 2048}
-        >>> agent = create_explanation_agent(custom_config)
     """
     logger = logging.getLogger(f"{__name__}.create_explanation_agent")
-    
     try:
+        # Check API key first
+        import os
+        from pathlib import Path
+        
+        # Load .env file from fake-news-detector directory
+        env_path = Path(__file__).parent.parent.parent / '.env'
+        if env_path.exists():
+            try:
+                with open(env_path, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#') and '=' in line:
+                            key, value = line.split('=', 1)
+                            os.environ[key] = value
+            except Exception as e:
+                logger.warning(f"⚠️ Could not load .env file: {e}")
+        
+        api_key = (
+            os.getenv('GEMINI_API_KEY') or
+            os.getenv('GOOGLE_API_KEY') or
+            os.getenv('GOOGLE_GEMINI_API_KEY')
+        )
+        
+        if not api_key:
+            raise RuntimeError("No Gemini API key found. Set GEMINI_API_KEY environment variable.")
+            
+        if len(api_key) < 10:
+            raise RuntimeError("Gemini API key is too short. Check GEMINI_API_KEY environment variable.")
+        
         # Handle configuration input
         if config is None:
             final_config = DEFAULT_CONFIG.copy()
@@ -308,15 +318,11 @@ def create_explanation_agent(config: Optional[Union[str, Dict[str, Any]]] = None
                 'version': __version__
             }
         )
-        
         return agent
 
     except Exception as e:
         logger.error(f"Failed to create explanation agent: {str(e)}", extra={'session_id': session_id})
-        raise handle_llm_explanation_exception(
-            e, 
-            context=ErrorContext(session_id=session_id, operation='agent_creation')
-        )
+        raise RuntimeError(f"LLM Explanation Agent creation failed: {str(e)}")
 
 
 def assess_source_reliability(source: str, session_id: str = None) -> Dict[str, Any]:

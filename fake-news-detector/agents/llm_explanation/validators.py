@@ -292,7 +292,7 @@ class InputValidator:
         Returns:
             ValidationResult for text validation with detailed feedback
         """
-        result = ValidationResult(is_valid=True, session_id=session_id)
+        result = ValidationResult(is_valid=True, errors=[], session_id=session_id)
         
         try:
             # Basic type validation
@@ -418,7 +418,7 @@ class InputValidator:
         Returns:
             ValidationResult for prediction validation
         """
-        result = ValidationResult(is_valid=True, session_id=session_id)
+        result = ValidationResult(is_valid=True, errors=[], session_id=session_id)
 
         try:
             # Type validation
@@ -469,7 +469,7 @@ class InputValidator:
         Returns:
             ValidationResult for confidence validation
         """
-        result = ValidationResult(is_valid=True, session_id=session_id)
+        result = ValidationResult(is_valid=True, errors=[], session_id=session_id)
 
         try:
             # Type validation
@@ -535,7 +535,7 @@ class InputValidator:
         Returns:
             ValidationResult for metadata validation
         """
-        result = ValidationResult(is_valid=True, session_id=session_id)
+        result = ValidationResult(is_valid=True, errors=[], session_id=session_id)
 
         try:
             # Type validation
@@ -615,7 +615,7 @@ class InputValidator:
     def _validate_optional_field(self, field_name: str, field_value: Any, 
                                 validation_spec: Union[type, Tuple]) -> ValidationResult:
         """Validate optional field with type and value checking."""
-        result = ValidationResult(is_valid=True)
+        result = ValidationResult(is_valid=True, errors=[])
         
         if isinstance(validation_spec, tuple):
             expected_type, valid_values = validation_spec
@@ -964,7 +964,7 @@ class OutputValidator:
         Returns:
             ValidationResult for content validation with quality metrics
         """
-        result = ValidationResult(is_valid=True, session_id=session_id)
+        result = ValidationResult(is_valid=True, errors=[], session_id=session_id)
 
         try:
             # Type validation
@@ -1082,7 +1082,7 @@ class OutputValidator:
         Returns:
             ValidationResult for metadata validation
         """
-        result = ValidationResult(is_valid=True, session_id=session_id)
+        result = ValidationResult(is_valid=True, errors=[], session_id=session_id)
 
         try:
             # Type validation
@@ -1150,7 +1150,7 @@ class OutputValidator:
 
     def _validate_quality_indicators(self, quality_indicators: Dict[str, Any]) -> ValidationResult:
         """Validate quality indicators structure and values."""
-        result = ValidationResult(is_valid=True)
+        result = ValidationResult(is_valid=True, errors=[])
         
         if not isinstance(quality_indicators, dict):
             result.add_warning(
@@ -1314,7 +1314,7 @@ class BatchValidator:
         start_time = time.time()
         self.batch_count += 1
 
-        result = ValidationResult(is_valid=True, session_id=session_id)
+        result = ValidationResult(is_valid=True, errors=[], session_id=session_id)
 
         try:
             # Basic structure validation
@@ -1414,7 +1414,7 @@ class BatchValidator:
             ValidationResult for batch output validation with quality metrics
         """
         start_time = time.time()
-        result = ValidationResult(is_valid=True, session_id=session_id)
+        result = ValidationResult(is_valid=True, errors=[], session_id=session_id)
 
         try:
             # Basic structure validation

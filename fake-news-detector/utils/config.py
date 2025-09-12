@@ -36,7 +36,13 @@ import threading
 # Optional dependencies for enhanced functionality
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    # Load .env file from fake-news-detector directory
+    env_path = Path(__file__).parent.parent / '.env'
+    if env_path.exists():
+        load_dotenv(env_path)
+    else:
+        # Fallback to default .env loading
+        load_dotenv()
     _DOTENV_AVAILABLE = True
 except ImportError:
     _DOTENV_AVAILABLE = False

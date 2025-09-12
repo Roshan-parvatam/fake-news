@@ -20,6 +20,7 @@ Version: 3.2.0 - Enhanced Production Edition
 import time
 import logging
 import os
+import asyncio
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -62,6 +63,51 @@ _performance_stats = {
 }
 
 
+def validate_api_keys():
+    """Validate required API keys before agent initialization."""
+    import os
+    from pathlib import Path
+    
+    # Load .env file from fake-news-detector directory
+    env_path = Path(__file__).parent.parent / '.env'
+    if env_path.exists():
+        try:
+            with open(env_path, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#') and '=' in line:
+                        key, value = line.split('=', 1)
+                        os.environ[key] = value
+            logger.info("✅ Loaded environment variables from .env file")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not load .env file: {e}")
+    else:
+        logger.info("ℹ️ No .env file found - using system environment variables")
+    
+    gemini_key = (
+        os.getenv('GEMINI_API_KEY') or
+        os.getenv('GOOGLE_API_KEY') or
+        os.getenv('GOOGLE_GEMINI_API_KEY')
+    )
+    
+    if not gemini_key:
+        logger.warning("⚠️ No Gemini API key found. Some agents may not function properly.")
+        logger.info("💡 To fix this:")
+        logger.info("   1. Create a .env file in the fake-news-detector directory")
+        logger.info("   2. Add: GEMINI_API_KEY=your_api_key_here")
+        logger.info("   3. Get your API key from: https://makersuite.google.com/app/apikey")
+        logger.info("   4. Or set the environment variable: export GEMINI_API_KEY=your_key")
+        return False
+        
+    if len(gemini_key) < 10:
+        logger.warning("⚠️ Gemini API key appears to be too short. Please verify your API key.")
+        logger.info("💡 API keys should be longer than 10 characters")
+        return False
+        
+    logger.info("✅ Gemini API key validated successfully")
+    return True
+
+
 def initialize_agents() -> Dict[str, Any]:
     """
     Initialize all agents with comprehensive error handling and performance tracking.
@@ -79,6 +125,11 @@ def initialize_agents() -> Dict[str, Any]:
         }
     
     logger.info("🚀 Initializing fake news detection agents...")
+    
+    # Validate API keys first
+    if not validate_api_keys():
+        logger.error("❌ API key validation failed - some agents may not initialize")
+    
     start_time = time.time()
     
     successful_agents = 0
@@ -96,7 +147,22 @@ def initialize_agents() -> Dict[str, Any]:
         model_path = Path("models/bert_fake_news")
         if model_path.exists():
             try:
-                load_result = bert_agent.load_model(model_path)
+                # Check if model loading is async and handle appropriately
+                if hasattr(bert_agent, '_model_loaded') and not bert_agent._model_loaded:
+                    import asyncio
+                    try:
+                        # Try async loading
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        load_result = loop.run_until_complete(bert_agent.load_model(model_path))
+                        loop.close()
+                    except Exception as async_error:
+                        logger.warning(f"Async model loading failed: {async_error}, using mock classification")
+                        load_result = {"success": False}
+                else:
+                    # Model already loaded or synchronous loading
+                    load_result = {"success": True}
+                    
                 if load_result.get("success", False):
                     _agent_status['bert_model_loaded'] = True
                     _agent_status['using_mock_bert'] = False
@@ -200,21 +266,28 @@ def initialize_agents() -> Dict[str, Any]:
 
     # 6. Initialize LLM Explanation Agent
     try:
-        from agents.llm_explanation import LLMExplanationAgent
-        
-        explanation_agent = LLMExplanationAgent()
+        from agents.llm_explanation import create_explanation_agent
+        explanation_agent = create_explanation_agent()
         _agents['explanation_agent'] = explanation_agent
         _agent_status['explanation_ready'] = True
         successful_agents += 1
         initialization_results['llm_explanation'] = {'status': 'success'}
         logger.info("✅ LLM Explanation Agent initialized successfully")
-        
+    except ImportError as import_error:
+        _agents['explanation_agent'] = None
+        _agent_status['explanation_ready'] = False
+        failed_agents += 1
+        error_msg = f"Import failed: {str(import_error)}"
+        initialization_results['llm_explanation'] = {'status': 'failed', 'error': error_msg}
+        logger.error(f"❌ LLM Explanation import failed: {error_msg}")
     except Exception as e:
         _agents['explanation_agent'] = None
         _agent_status['explanation_ready'] = False
         failed_agents += 1
-        initialization_results['llm_explanation'] = {'status': 'failed', 'error': str(e)}
-        logger.error(f"❌ LLM Explanation initialization failed: {str(e)}")
+        error_msg = f"Initialization failed: {str(e)}"
+        initialization_results['llm_explanation'] = {'status': 'failed', 'error': error_msg}
+        logger.error(f"❌ LLM Explanation initialization failed: {error_msg}")
+        logger.exception("Full LLM Explanation error traceback:")
 
     # Update global status and performance stats
     _agent_status['agents_initialized'] = True
@@ -284,7 +357,18 @@ def safe_agent_process(agent: Any, agent_name: str, input_data: Dict[str, Any],
             # In production, you might want to use threading or asyncio timeouts
             logger.debug(f"Processing with {timeout}s timeout (monitoring only)")
         
-        result = agent.process(input_data)
+        # Handle async process method
+        if asyncio.iscoroutinefunction(agent.process):
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                result = loop.run_until_complete(agent.process(input_data))
+                loop.close()
+            except Exception as async_error:
+                logger.warning(f"Async processing failed: {async_error}, using fallback")
+                result = {"success": False, "error": {"message": str(async_error)}}
+        else:
+            result = agent.process(input_data)
         processing_time = time.time() - start_time
 
         if result and result.get("success", False):
@@ -683,7 +767,9 @@ def evidence_evaluator_node(state: FakeNewsState) -> FakeNewsState:
 
             # Log enhanced features  
             evidence_result = result["result"]
-            verification_links = evidence_result.get("verification_links", [])
+            # Map verification_sources to verification_links for compatibility
+            verification_sources = evidence_result.get("verification_sources", [])
+            verification_links = verification_sources  # Use verification_sources as verification_links
             safety_used = evidence_result.get("safety_fallback_used", False)
             institutional_links = sum(1 for link in verification_links 
                                     if isinstance(link, dict) and 'institutional' in link.get('type', ''))
@@ -842,8 +928,18 @@ def llm_explanation_node(state: FakeNewsState) -> FakeNewsState:
             f"Methodology: {'Yes' if has_methodology else 'No'}"
         )
     else:
-        error_msg = result.get("error", {}).get("message", "Explanation generation failed")
-        new_state.setdefault("processing_errors", []).append(error_msg)
+        error_info = result.get("error", {})
+        if isinstance(error_info, dict):
+            error_msg = error_info.get("message", "Explanation generation failed")
+            error_code = error_info.get("code", "UNKNOWN_ERROR")
+        else:
+            error_msg = str(error_info) if error_info else "Explanation generation failed"
+            error_code = "UNKNOWN_ERROR"
+        
+        detailed_error = f"LLM Explanation Error [{error_code}]: {error_msg}"
+        new_state.setdefault("processing_errors", []).append(detailed_error)
+        
+        logger.error(f"❌ LLM Explanation detailed error: {detailed_error}")
         
         # Generate fallback explanation
         prediction = bert_results.get("prediction", "UNKNOWN")

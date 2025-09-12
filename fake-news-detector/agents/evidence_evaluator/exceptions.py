@@ -654,11 +654,16 @@ def raise_prompt_generation_error(prompt_type: str, message: str, generation_sta
         template_name: Optional template name
         session_id: Optional session ID for tracking
     """
+    parameters = {}
+    if generation_stage:
+        parameters['generation_stage'] = generation_stage
+    if template_name:
+        parameters['template_name'] = template_name
+    
     raise PromptGenerationError(
         f"Prompt generation failed for {prompt_type}: {message}", 
         prompt_type, 
-        generation_stage, 
-        template_name, 
+        parameters, 
         session_id
     )
 
