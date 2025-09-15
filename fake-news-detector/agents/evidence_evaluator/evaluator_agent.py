@@ -18,6 +18,7 @@ from typing import Dict, List, Optional, Any
 import google.generativeai as genai
 import requests
 from bs4 import BeautifulSoup
+from duckduckgo_search import DDGS
 
 # Core imports
 from agents.base import BaseAgent
@@ -81,7 +82,7 @@ class EvidenceEvaluatorAgent(BaseAgent):
             self.enable_detailed_analysis = self.config.get('enable_detailed_analysis', True)
             self.evidence_threshold = self.config.get('evidence_threshold', 6.0)
             self.enable_fallacy_detection = self.config.get('enable_fallacy_detection', True)
-            self.max_verification_sources = self.config.get('max_verification_sources', 5)
+            self.max_verification_sources = self.config.get('max_verification_sources', 50)  # Much higher limit for RAG
             
             # Scoring weights
             self.scoring_weights = self.config.get('scoring_weights', {
@@ -423,74 +424,89 @@ class EvidenceEvaluatorAgent(BaseAgent):
             }
         }
 
+    def _search_with_duckduckgo(self, claims: List[Dict[str, Any]], session_id: str = None) -> List[Dict[str, Any]]:
+        """
+        Performs a DuckDuckGo search for each claim to find verification sources.
+
+        Args:
+            claims: A list of claims to be verified.
+            session_id: Optional session ID for tracking.
+
+        Returns:
+            A list of dictionaries, where each dictionary represents a verification source.
+        """
+        verification_sources = []
+        with DDGS() as ddgs:
+            for claim in claims:
+                claim_text = claim.get('text')
+                if not claim_text:
+                    continue
+
+                self.logger.info(f"Searching for claim: '{claim_text}'", extra={'session_id': session_id})
+                try:
+                    search_results = list(ddgs.text(claim_text, max_results=3))
+                    for result in search_results:
+                        verification_sources.append({
+                            'claim': claim_text,
+                            'institution': result.get('title', 'N/A'),
+                            'url': result.get('href', ''),
+                            'verification_type': 'search_result',
+                            'confidence': 0.7,  # Assign a default confidence
+                            'quality_score': self._calculate_source_quality_score({'url': result.get('href', '')}),
+                            'source_type': 'duckduckgo_search',
+                            'page_title': result.get('title', 'N/A'),
+                            'snippet': result.get('body', '')
+                        })
+                except Exception as e:
+                    self.logger.error(f"DuckDuckGo search failed for claim '{claim_text}': {e}", extra={'session_id': session_id})
+
+                # Respectful delay to avoid rate limiting
+                time.sleep(2)  # 2-second delay between queries
+
+        return verification_sources
+
     def _generate_verification_sources_with_retry(self, 
                                                 article_text: str, 
                                                 claims: List[Dict[str, Any]],
                                                 prediction: str,
                                                 session_id: str = None) -> List[Dict[str, Any]]:
-        """Generate verification sources with retry logic and error handling."""
-        
+        """
+        Generates verification sources using DuckDuckGo search with retry logic.
+        """
         for attempt in range(self.max_retries):
             try:
-                self._respect_rate_limits()
-                
-                prompt = get_prompt_template(
-                    'verification_sources',
-                    article_text=article_text,
-                    claims=claims,
-                    prediction=prediction
+                # The new RAG approach using DuckDuckGo search
+                verification_sources = self._search_with_duckduckgo(claims, session_id)
+
+                validated_sources = []
+                from .validators import URLValidator
+                url_validator = URLValidator()
+                for source in verification_sources:
+                    url = source.get('url', '')
+                    if url and url_validator.validate_url_specificity(url).is_valid:
+                        validated_sources.append(source)
+                    else:
+                        self.logger.warning(f"Rejected URL for its lack of specificity: {url}", extra={'session_id': session_id})
+
+                self.logger.info(
+                    f"Generated {len(validated_sources)} verification sources via DuckDuckGo search",
+                    extra={'session_id': session_id, 'attempt': attempt + 1}
                 )
-                
-                response = self.model.generate_content(prompt)
-                
-                if self._is_valid_response(response):
-                    response_text = response.candidates[0].content.parts[0].text
-                    verification_sources = self._parse_verification_sources(response_text)
-                    
-                    # Validate URL specificity using URLValidator (less restrictive)
-                    validated_sources = []
-                    self.logger.info(f"Processing {len(verification_sources)} verification sources")
-                    for i, source in enumerate(verification_sources):
-                        url = source.get('url', '')
-                        self.logger.info(f"Source {i+1}: {url}")
-                        # Use URLValidator instead of PromptValidator for less restrictive validation
-                        from .validators import URLValidator
-                        url_validator = URLValidator()
-                        url_result = url_validator.validate_url_specificity(url)
-                        if url_result.is_valid:
-                            source['quality_score'] = self._calculate_source_quality_score(source)
-                            validated_sources.append(source)
-                            self.logger.info(f"✅ Accepted URL: {url}")
-                        else:
-                            error_msg = url_result.errors[0] if url_result.errors else 'Unknown error'
-                            self.logger.warning(f"❌ Rejected URL: {url} - {error_msg}")
-                    
-                    self.logger.info(
-                        f"Generated {len(validated_sources)} verification sources",
-                        extra={'session_id': session_id, 'attempt': attempt + 1}
-                    )
-                    
-                    return validated_sources[:self.max_verification_sources]
-                
-                else:
-                    self.logger.warning(
-                        f"Invalid LLM response for verification sources (attempt {attempt + 1})",
-                        extra={'session_id': session_id}
-                    )
-                    
+
+                return validated_sources[:self.max_verification_sources]
+
             except Exception as e:
                 self.evaluation_metrics['api_errors'] += 1
                 self.logger.warning(
                     f"Verification source generation attempt {attempt + 1} failed: {str(e)}",
                     extra={'session_id': session_id}
                 )
-                
+
                 if attempt < self.max_retries - 1:
                     time.sleep(self.retry_delay * (attempt + 1))  # Exponential backoff
                     continue
-        
-        # All retries failed, return fallback
-        self.logger.warning("All verification source generation attempts failed, using fallback")
+
+        self.logger.warning("All verification source generation attempts failed, using fallback.")
         return self._create_fallback_sources(claims)
 
     def _assess_source_quality_with_retry(self, 

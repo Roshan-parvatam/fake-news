@@ -285,7 +285,7 @@ def get_default_config() -> Dict[str, Any]:
         'enable_detailed_analysis': True,
         'evidence_threshold': 6.0,
         'enable_fallacy_detection': True,
-        'max_verification_sources': 5,
+        'max_verification_sources': 50,  # Much higher limit to allow more RAG sources
         'max_article_length': 4000,
         'max_claims_for_processing': 20,
         

@@ -7,9 +7,10 @@ import { cn } from '@/lib/utils';
 
 interface ClaimsListProps {
   claims: Claim[];
+  verificationLinks?: any[]; // Add verification links for enhanced display
 }
 
-export const ClaimsList: React.FC<ClaimsListProps> = ({ claims }) => {
+export const ClaimsList: React.FC<ClaimsListProps> = ({ claims, verificationLinks = [] }) => {
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case 'HIGH':
@@ -49,6 +50,15 @@ export const ClaimsList: React.FC<ClaimsListProps> = ({ claims }) => {
     }
   };
 
+  const getVerificationSourceCount = (claimText: string) => {
+    if (!verificationLinks || verificationLinks.length === 0) return 0;
+    
+    // Count verification sources that match this claim
+    return verificationLinks.filter(link => 
+      link.claim && link.claim.toLowerCase().includes(claimText.toLowerCase().substring(0, 20))
+    ).length;
+  };
+
   return (
     <Card className="glass">
       <CardHeader>
@@ -67,6 +77,12 @@ export const ClaimsList: React.FC<ClaimsListProps> = ({ claims }) => {
                   <Badge variant={getPriorityColor(claim.priority)}>
                     {claim.priority} PRIORITY
                   </Badge>
+                  {/* ✅ NEW: Show verification source count */}
+                  {getVerificationSourceCount(claim.text) > 0 && (
+                    <Badge variant="outline" className="text-xs">
+                      {getVerificationSourceCount(claim.text)} source{getVerificationSourceCount(claim.text) !== 1 ? 's' : ''}
+                    </Badge>
+                  )}
                 </div>
                 <span className={cn(
                   "text-xs px-2 py-1 rounded-full font-medium",

@@ -469,7 +469,7 @@ Explanation: ${data.explanation}`;
             </CardHeader>
             <CardContent>
               {data.claims && data.claims.length > 0 ? (
-                <ClaimsList claims={data.claims} />
+                <ClaimsList claims={data.claims} verificationLinks={data.verification_links} />
               ) : (
                 <div className="text-center py-8">
                   <Info className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
@@ -547,7 +547,7 @@ Explanation: ${data.explanation}`;
                       </Badge>
                     </div>
                     <div className="space-y-3">
-                      {data.verification_links.slice(0, 5).map((link, index) => (
+                      {data.verification_links.map((link, index) => (
                         <div key={index} className="flex items-start space-x-3 p-4 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors border">
                           <ExternalLink className="w-5 h-5 text-muted-foreground mt-0.5 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
@@ -608,14 +608,6 @@ Explanation: ${data.explanation}`;
                           </div>
                         </div>
                       ))}
-                      
-                      {data.verification_links.length > 5 && (
-                        <div className="text-center py-2">
-                          <p className="text-xs text-muted-foreground">
-                            +{data.verification_links.length - 5} more verification sources available
-                          </p>
-                        </div>
-                      )}
                     </div>
                   </div>
                 ) : data.evidence?.sources && data.evidence.sources.length > 0 ? (

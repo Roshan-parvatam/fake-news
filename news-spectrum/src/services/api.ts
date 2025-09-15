@@ -128,19 +128,35 @@ export const analyzeContent = async (request: AnalysisRequest): Promise<Analysis
       classification: (results.classification?.prediction || 'UNCERTAIN') as 'REAL' | 'FAKE' | 'UNCERTAIN',
       confidence: Math.round((results.classification?.confidence || 0) * 100),
 
-      // ✅ FIXED: Access claims from nested structure
+      // ✅ FIXED: Access claims from nested structure with RAG-based verification
       claims: (results.claims?.extracted_claims || []).map((claim: any) => {
         const claimText = claim.text || claim.claim_text || claim.claim || 'Unknown claim';
         const priority = typeof claim.priority === 'number'
           ? (claim.priority <= 1 ? 'HIGH' : claim.priority <= 2 ? 'MEDIUM' : 'LOW')
           : (claim.priority || 'MEDIUM');
-        const verificationScore = claim.verifiability_score || claim.verification_score || 3;
+        
+        // ✅ NEW: Use RAG verification sources to determine actual verification status
+        const verificationLinks = results.evidence?.verification_links || [];
+        const claimVerificationSources = verificationLinks.filter((link: any) => 
+          link.claim && link.claim.toLowerCase().includes(claimText.toLowerCase().substring(0, 20))
+        );
+        
+        // Determine verification status based on actual sources found
+        let verification_status: 'VERIFIED' | 'UNVERIFIED' | 'DISPUTED';
+        if (claimVerificationSources.length > 0) {
+          // ✅ FIXED: Mark as VERIFIED if ANY verification source is found (not just high quality)
+          verification_status = 'VERIFIED';
+        } else {
+          // Fallback to original scoring if no RAG sources found
+          const verificationScore = claim.verifiability_score || claim.verification_score || 3;
+          verification_status = (verificationScore >= 7 ? 'VERIFIED' :
+                              verificationScore >= 4 ? 'UNVERIFIED' : 'DISPUTED');
+        }
         
         return {
           text: claimText,
           priority: priority as 'HIGH' | 'MEDIUM' | 'LOW',
-          verification_status: (verificationScore >= 7 ? 'VERIFIED' :
-                              verificationScore >= 4 ? 'UNVERIFIED' : 'DISPUTED') as 'VERIFIED' | 'UNVERIFIED' | 'DISPUTED'
+          verification_status: verification_status as 'VERIFIED' | 'UNVERIFIED' | 'DISPUTED'
         };
       }),
 
