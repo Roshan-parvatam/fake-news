@@ -753,6 +753,7 @@ def evidence_evaluator_node(state: FakeNewsState) -> FakeNewsState:
             "text": state["article_text"],
             "extracted_claims": state.get("extracted_claims", []),
             "context_analysis": state.get("context_analysis", {}),
+            "bert_results": state.get("bert_results", {}),
             "enable_specific_verification_links": True,
             "enable_institutional_fallbacks": True,
             "detailed_analysis": state.get("require_detailed_analysis", False)

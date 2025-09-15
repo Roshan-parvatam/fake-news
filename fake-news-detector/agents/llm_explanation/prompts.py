@@ -44,7 +44,8 @@ class ExplanationPrompts:
 
     @staticmethod
     def main_explanation_prompt(article_text: str, prediction: str, confidence: float,
-                               source: str, date: str, subject: str, session_id: str = None) -> str:
+                               source: str, date: str, subject: str, session_id: str = None,
+                               evidence_evaluation: Dict[str, Any] = None) -> str:
         """
         Generate comprehensive main explanation prompt with institutional framing.
         
@@ -59,6 +60,32 @@ class ExplanationPrompts:
             
             logger.info(f"Generating main explanation prompt", extra={'session_id': session_id, 'domain': subject})
 
+            # Prepare evidence evaluation context if available
+            evidence_context = ""
+            if evidence_evaluation and evidence_evaluation.get('verification_sources'):
+                verification_sources = evidence_evaluation['verification_sources']
+                verified_links = [link for link in verification_sources if link.get('is_verified')]
+                
+                if verified_links:
+                    evidence_context = f"""
+
+EVIDENCE EVALUATION DATA:
+The Evidence Evaluator has provided {len(verification_sources)} verification sources, of which {len(verified_links)} have been programmatically verified as reachable:
+
+"""
+                    for i, link in enumerate(verified_links[:5], 1):  # Limit to first 5 verified links
+                        evidence_context += f"- Verified Source {i}: {link.get('institution', 'Unknown')} - {link.get('page_title', 'No title')} (URL: {link.get('url', 'No URL')})\n"
+                    
+                    if len(verified_links) > 5:
+                        evidence_context += f"- ... and {len(verified_links) - 5} more verified sources\n"
+                else:
+                    evidence_context = f"""
+
+EVIDENCE EVALUATION DATA:
+The Evidence Evaluator provided {len(verification_sources)} verification sources, but none were programmatically verified as reachable. You should note this limitation in your analysis.
+
+"""
+
             prompt = f"""You are a senior academic researcher conducting systematic content analysis for institutional fact-checking protocols.
 
 INSTITUTIONAL ANALYSIS REQUEST:
@@ -69,7 +96,7 @@ INSTITUTIONAL ANALYSIS REQUEST:
 - Subject Domain: {subject.title()}
 
 CONTENT FOR ACADEMIC EVALUATION:
-{article_context}
+{article_context}{evidence_context}
 
 RESEARCH FRAMEWORK FOR PUBLIC EDUCATION:
 
@@ -87,9 +114,9 @@ Explain the content credibility assessment using clear, educational language:
 
 Present systematic evidence analysis for educational purposes:
 - **Content Analysis**: Specific elements that support the institutional classification
-- **Source Evaluation**: Academic assessment of publication source reliability
-- **Factual Verification**: Cross-reference analysis with established academic sources
-- **Research Methodology**: Evidence-based analytical approaches used
+- **Source Evaluation**: You have been provided with a list of evidence links from the Evidence Evaluator. **Crucially, some of these links have been programmatically verified as reachable and have a `page_title`**. When discussing the evidence, you MUST prioritize the links where `is_verified` is `true`. Mention the `page_title` of these verified sources as concrete proof. For example, 'The claim is supported by a verified article titled "[page_title]".' If no links were verified, state that clearly.
+- **Factual Verification**: Cross-reference analysis with established academic sources, emphasizing verified links with their page titles for credibility
+- **Research Methodology**: Evidence-based analytical approaches used, highlighting the verification process for enhanced reliability
 
 ## 3. Institutional Credibility Assessment
 

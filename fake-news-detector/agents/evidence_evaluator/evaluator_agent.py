@@ -11,9 +11,13 @@ structured logging, and graceful degradation.
 import os
 import time
 import logging
+import re
+import json
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 import google.generativeai as genai
+import requests
+from bs4 import BeautifulSoup
 
 # Core imports
 from agents.base import BaseAgent
@@ -240,6 +244,10 @@ class EvidenceEvaluatorAgent(BaseAgent):
             extracted_claims = input_data.get('extracted_claims', [])
             context_analysis = input_data.get('context_analysis', {})
             
+            # Get the prediction from bert_results
+            bert_results = input_data.get('bert_results', {})
+            prediction = bert_results.get('prediction', 'UNKNOWN')
+            
             # Determine analysis depth
             context_score = context_analysis.get('overall_context_score', 5.0)
             include_detailed_analysis = (
@@ -262,6 +270,7 @@ class EvidenceEvaluatorAgent(BaseAgent):
                 article_text=article_text,
                 extracted_claims=extracted_claims,
                 context_analysis=context_analysis,
+                prediction=prediction,
                 include_detailed_analysis=include_detailed_analysis,
                 session_id=session_id
             )
@@ -313,6 +322,7 @@ class EvidenceEvaluatorAgent(BaseAgent):
                          article_text: str,
                          extracted_claims: List[Dict[str, Any]],
                          context_analysis: Dict[str, Any],
+                         prediction: str = 'UNKNOWN',
                          include_detailed_analysis: bool = True,
                          session_id: str = None) -> Dict[str, Any]:
         """
@@ -329,8 +339,18 @@ class EvidenceEvaluatorAgent(BaseAgent):
         
         # Step 1: Generate verification sources with retry logic
         verification_sources = self._generate_verification_sources_with_retry(
-            article_text, extracted_claims, session_id
+            article_text, extracted_claims, prediction, session_id
         )
+
+        # Step 1.5: Verify and enrich the generated links
+        if verification_sources:
+            self.logger.info(f"Verifying {len(verification_sources)} generated links...", extra={'session_id': session_id})
+            verification_sources = self._verify_and_enrich_links(verification_sources, session_id)
+            
+            # Filter out unreachable links for a cleaner result
+            original_count = len(verification_sources)
+            verification_sources = [link for link in verification_sources if link.get('is_verified')]
+            self.logger.info(f"Retained {len(verification_sources)} of {original_count} links after verification.", extra={'session_id': session_id})
         
         # Step 2: Assess source quality with retry logic
         source_quality_analysis = self._assess_source_quality_with_retry(
@@ -406,6 +426,7 @@ class EvidenceEvaluatorAgent(BaseAgent):
     def _generate_verification_sources_with_retry(self, 
                                                 article_text: str, 
                                                 claims: List[Dict[str, Any]],
+                                                prediction: str,
                                                 session_id: str = None) -> List[Dict[str, Any]]:
         """Generate verification sources with retry logic and error handling."""
         
@@ -416,7 +437,8 @@ class EvidenceEvaluatorAgent(BaseAgent):
                 prompt = get_prompt_template(
                     'verification_sources',
                     article_text=article_text,
-                    claims=claims
+                    claims=claims,
+                    prediction=prediction
                 )
                 
                 response = self.model.generate_content(prompt)
@@ -587,37 +609,40 @@ class EvidenceEvaluatorAgent(BaseAgent):
 
     # Keep all existing helper methods unchanged
     def _parse_verification_sources(self, response_text: str) -> List[Dict[str, Any]]:
-        """Parse LLM response into structured verification sources."""
-        import re
-        verification_sources = []
-        
-        sections = re.split(r'## VERIFICATION SOURCE \d+', response_text)
-        for section in sections[1:]:
-            try:
-                source_data = {}
-                
-                claim_match = re.search(r'\*\*CLAIM\*\*:\s*["\']?(.*?)["\']?(?=\n|\*\*)', section, re.IGNORECASE)
-                institution_match = re.search(r'\*\*INSTITUTION\*\*:\s*(.*?)(?=\n|\*\*)', section, re.IGNORECASE)
-                url_match = re.search(r'\*\*SPECIFIC_URL\*\*:\s*(https?://\S+)', section, re.IGNORECASE)
-                type_match = re.search(r'\*\*VERIFICATION_TYPE\*\*:\s*(\w+)', section, re.IGNORECASE)
-                confidence_match = re.search(r'\*\*CONFIDENCE\*\*:\s*([0-9]\.[0-9]+)', section, re.IGNORECASE)
-                
-                if claim_match and institution_match and url_match:
-                    source_data = {
-                        'claim': claim_match.group(1).strip(),
-                        'institution': institution_match.group(1).strip(),
-                        'url': url_match.group(1).strip(),
-                        'verification_type': type_match.group(1).strip() if type_match else 'general',
-                        'confidence': float(confidence_match.group(1)) if confidence_match else 0.5,
-                        'source_type': 'llm_generated'
-                    }
-                    verification_sources.append(source_data)
-                    
-            except Exception as e:
-                self.logger.debug(f"Failed to parse verification section: {str(e)}")
-                continue
-        
-        return verification_sources
+        """
+        [JSON VERSION] Parses a JSON string from the LLM response into structured
+        verification sources.
+        """
+        self.logger.debug(f"Attempting to parse JSON response ({len(response_text)} chars)")
+        try:
+            # Use regex to find the JSON array, ignoring any leading/trailing text from the LLM
+            json_match = re.search(r'\[\s*\{.*\}\s*\]', response_text, re.DOTALL)
+            if not json_match:
+                self.logger.error("No valid JSON array found in the LLM response.")
+                self.logger.debug(f"Full response received: {response_text}")
+                return []
+            
+            json_string = json_match.group(0)
+            parsed_data = json.loads(json_string)
+
+            if isinstance(parsed_data, list):
+                # Add the source_type for internal tracking
+                for source in parsed_data:
+                    if isinstance(source, dict):
+                         source['source_type'] = 'llm_generated'
+                self.logger.info(f"Successfully parsed {len(parsed_data)} sources from JSON.")
+                return parsed_data
+            else:
+                self.logger.warning(f"Parsed JSON is not a list. Type: {type(parsed_data)}")
+                return []
+
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to decode JSON from LLM response: {e}")
+            self.logger.debug(f"Response text that failed parsing: {response_text}")
+            return []
+        except Exception as e:
+            self.logger.error(f"An unexpected error occurred during JSON parsing: {e}")
+            return []
 
     def _calculate_source_quality_score(self, source: Dict[str, Any]) -> float:
         """Calculate quality score for a verification source."""
@@ -831,6 +856,78 @@ Review Focus: Look for logical fallacies, verify statistical claims, and ensure 
                 time.sleep(self.rate_limit - time_since_last)
         self.last_request_time = time.time()
 
+    def _verify_and_enrich_links(self, links: List[Dict[str, Any]], session_id: str = None) -> List[Dict[str, Any]]:
+        """
+        Verifies URLs are reachable and enriches them with page titles.
+        
+        Args:
+            links: List of link dictionaries with 'url' field
+            session_id: Optional session ID for logging
+            
+        Returns:
+            List of enriched link dictionaries with verification status and page titles
+        """
+        verified_links = []
+        
+        self.logger.info(f"Starting verification of {len(links)} links", extra={'session_id': session_id})
+        
+        for i, link in enumerate(links):
+            url = link.get('url')
+            if not url:
+                self.logger.warning(f"Link {i+1} has no URL, skipping verification", extra={'session_id': session_id})
+                continue
+
+            try:
+                # Use a timeout and a common user-agent
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36'
+                }
+                
+                self.logger.debug(f"Verifying URL {i+1}: {url}", extra={'session_id': session_id})
+                response = requests.get(url, timeout=10, headers=headers)
+                
+                # Check for successful response
+                if response.status_code == 200:
+                    link['is_verified'] = True
+                    link['status_code'] = 200
+                    
+                    # Try to parse the page title for context
+                    try:
+                        soup = BeautifulSoup(response.text, 'html.parser')
+                        title_tag = soup.find('title')
+                        if title_tag and title_tag.string:
+                            link['page_title'] = title_tag.string.strip()
+                        else:
+                            link['page_title'] = "No Title Found"
+                    except Exception as parse_error:
+                        self.logger.debug(f"Failed to parse title for {url}: {parse_error}", extra={'session_id': session_id})
+                        link['page_title'] = "Title Parse Failed"
+                    
+                    self.logger.debug(f"✅ URL {i+1} verified successfully: {link.get('page_title', 'No title')}", extra={'session_id': session_id})
+                else:
+                    link['is_verified'] = False
+                    link['status_code'] = response.status_code
+                    link['page_title'] = "Unreachable"
+                    self.logger.warning(f"❌ URL {i+1} returned status {response.status_code}: {url}", extra={'session_id': session_id})
+                
+            except requests.RequestException as e:
+                self.logger.warning(f"❌ Failed to verify URL {i+1} {url}: {e}", extra={'session_id': session_id})
+                link['is_verified'] = False
+                link['status_code'] = "Error"
+                link['page_title'] = f"Verification Failed: {type(e).__name__}"
+            except Exception as e:
+                self.logger.error(f"❌ Unexpected error verifying URL {i+1} {url}: {e}", extra={'session_id': session_id})
+                link['is_verified'] = False
+                link['status_code'] = "Error"
+                link['page_title'] = f"Verification Error: {type(e).__name__}"
+
+            verified_links.append(link)
+        
+        verified_count = sum(1 for link in verified_links if link.get('is_verified', False))
+        self.logger.info(f"Link verification completed: {verified_count}/{len(verified_links)} links verified", extra={'session_id': session_id})
+        
+        return verified_links
+
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get comprehensive performance metrics."""
         try:
@@ -889,6 +986,10 @@ Review Focus: Look for logical fallacies, verify statistical claims, and ensure 
             extracted_claims = input_data.get('extracted_claims', [])
             context_analysis = input_data.get('context_analysis', {})
             
+            # Get the prediction from bert_results
+            bert_results = input_data.get('bert_results', {})
+            prediction = bert_results.get('prediction', 'UNKNOWN')
+            
             # Determine analysis depth
             context_score = context_analysis.get('overall_context_score', 5.0)
             include_detailed_analysis = (
@@ -902,6 +1003,7 @@ Review Focus: Look for logical fallacies, verify statistical claims, and ensure 
                 article_text=article_text,
                 extracted_claims=extracted_claims,
                 context_analysis=context_analysis,
+                prediction=prediction,
                 include_detailed_analysis=include_detailed_analysis,
                 session_id=session_id
             )

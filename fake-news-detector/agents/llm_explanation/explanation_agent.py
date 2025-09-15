@@ -288,6 +288,14 @@ class LLMExplanationAgent(BaseAgent):
             confidence = input_data.get('confidence', 0.0)
             metadata = input_data.get('metadata', {})
             require_detailed = input_data.get('require_detailed_analysis', False)
+            
+            # Extract evidence evaluation data from all_agent_results if available
+            all_agent_results = input_data.get('all_agent_results', {})
+            evidence_evaluation = all_agent_results.get('evidence_evaluation', {})
+            
+            # Add evidence evaluation to metadata for use in prompt generation
+            if evidence_evaluation:
+                metadata['evidence_evaluation'] = evidence_evaluation
 
             # Determine analysis depth based on confidence and configuration
             trigger_detailed = (
@@ -427,11 +435,14 @@ class LLMExplanationAgent(BaseAgent):
             subject = metadata.get('subject', 'General News')
             author = metadata.get('author', 'Unknown Author')
             domain = metadata.get('domain', 'general')
+            
+            # Extract evidence evaluation data if available
+            evidence_evaluation = metadata.get('evidence_evaluation', {})
 
             # Step 1: Generate primary explanation with enhanced prompts
             self.logger.info("Generating primary explanation", extra={'session_id': session_id})
             explanation = self._generate_primary_explanation(
-                article_text, prediction, confidence, source, date, subject, session_id
+                article_text, prediction, confidence, source, date, subject, session_id, evidence_evaluation
             )
 
             # Step 2: Conditional detailed analysis with enhanced logic
@@ -524,7 +535,8 @@ class LLMExplanationAgent(BaseAgent):
             raise ExplanationGenerationError(f"Generation failed: {str(e)}", "comprehensive_generation")
 
     def _generate_primary_explanation(self, article_text: str, prediction: str, confidence: float,
-                                    source: str, date: str, subject: str, session_id: str = None) -> str:
+                                    source: str, date: str, subject: str, session_id: str = None,
+                                    evidence_evaluation: Dict[str, Any] = None) -> str:
         """Generate main explanation using structured prompts with enhanced error handling."""
         try:
             # Validate prompt parameters
@@ -546,7 +558,7 @@ class LLMExplanationAgent(BaseAgent):
 
             self._respect_rate_limits()
 
-            # Generate enhanced prompt
+            # Generate enhanced prompt with evidence evaluation data
             prompt = get_explanation_prompt(
                 'main',
                 article_text=article_text,
@@ -554,7 +566,8 @@ class LLMExplanationAgent(BaseAgent):
                 confidence=confidence,
                 source=source,
                 date=date,
-                subject=subject
+                subject=subject,
+                evidence_evaluation=evidence_evaluation
             )
 
             # Call Gemini API with timeout handling

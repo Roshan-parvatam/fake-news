@@ -35,130 +35,92 @@ class EvidenceVerificationPrompts:
     @staticmethod
     def generate_verification_sources(article_text: str, 
                                     claims: List[Dict[str, Any]], 
+                                    prediction: str = 'UNKNOWN',
                                     session_id: str = None) -> str:
         """
-        Generate specific verification sources using advanced prompt engineering.
-        
-        Uses Chain-of-Thought reasoning, Few-Shot examples, and structured output.
-        
-        Args:
-            article_text: Article content for verification
-            claims: Claims to verify with metadata
-            session_id: Optional session ID for tracking
-        
-        Returns:
-            Formatted prompt string for LLM processing
-        
-        Raises:
-            PromptGenerationError: If prompt generation fails
+        [JSON-ENFORCED] Generate prediction-aware verification sources using advanced prompt engineering.
         """
         logger = logging.getLogger(f"{__name__}.EvidenceVerificationPrompts")
         
         try:
             # Validate inputs
             if not article_text or not isinstance(article_text, str):
-                raise_prompt_generation_error(
-                    'verification_sources', 
-                    "Article text must be non-empty string",
-                    {'article_text_type': type(article_text).__name__},
-                    session_id
-                )
-            
+                raise_prompt_generation_error('verification_sources', "Article text must be non-empty string", {'article_text_type': type(article_text).__name__}, session_id)
             if not claims or not isinstance(claims, list):
-                raise_prompt_generation_error(
-                    'verification_sources',
-                    "Claims must be non-empty list", 
-                    {'claims_type': type(claims).__name__},
-                    session_id
-                )
+                raise_prompt_generation_error('verification_sources', "Claims must be non-empty list", {'claims_type': type(claims).__name__}, session_id)
             
-            # Prepare claims with safety checks
             formatted_claims = []
-            for i, claim in enumerate(claims[:5]):  # Limit to 5 claims for focus
+            for i, claim in enumerate(claims[:5]):
                 if isinstance(claim, dict) and claim.get('text'):
                     claim_text = str(claim['text']).strip()
                     if claim_text:
                         formatted_claims.append(f"{i+1}. {claim_text}")
             
             if not formatted_claims:
-                raise_prompt_generation_error(
-                    'verification_sources',
-                    "No valid claims found for verification",
-                    {'claims_count': len(claims)},
-                    session_id
-                )
-            
+                raise_prompt_generation_error('verification_sources', "No valid claims found for verification", {'claims_count': len(claims)}, session_id)
+
             claims_text = "\n".join(formatted_claims)
-            article_excerpt = article_text[:1200].strip()
+            article_excerpt = article_text[:2000].strip()
+            prediction_upper = prediction.upper() if prediction else 'UNKNOWN'
+
+            # Define the JSON schema for the LLM
+            json_schema = """
+            {
+              "claim": "The original claim text being verified.",
+              "institution": "The name of the credible institution (e.g., 'Stanford University', 'Snopes').",
+              "url": "The specific, deep-link URL to the article or study. MUST NOT be a homepage.",
+              "verification_type": "The type of source: 'debunking_source' if it directly refutes the claim, 'contextual_source' if it is a fallback, or 'primary_source' for REAL articles.",
+              "confidence": 0.9
+            }
+            """
             
-            # Enhanced prompt with CoT and Few-Shot learning
-            prompt = f"""You are Dr. Sarah Chen, a senior fact-checking specialist with 15+ years of experience in investigative journalism and academic research verification. You have worked with Reuters, Associated Press, and the International Fact-Checking Network.
+            if prediction_upper == 'FAKE':
+                # Goal: Find debunking evidence in a JSON format
+                prompt = f"""You are a data extraction specialist for a fact-checking organization. Your task is to find evidence that DEBUNKS the claims from a FAKE article and return the findings as a JSON array.
 
-<thinking>
-My task is to generate exactly 5 highly specific, actionable verification sources for the given claims. For each claim, I need to:
+                **Article Content:**
+                {article_excerpt}
 
-1. IDENTIFY: What is the core factual assertion that needs verification?
-2. CATEGORIZE: What type of evidence would best verify this claim? (official data, research study, expert statement, etc.)
-3. SOURCE: Which authoritative institution would be the most credible source for this type of claim?
-4. SPECIFY: What would be the exact URL path structure for finding this information?
-5. ASSESS: How confident am I that this source exists and would contain the needed information?
+                **Claims to Investigate:**
+                {claims_text}
 
-I must avoid generic homepage URLs and instead provide specific, deep-linked URLs that would directly address each claim.
-</thinking>
+                **Instructions:**
+                1. For each claim, find a specific URL from a reputable fact-checking site (e.g., Snopes, PolitiFact) or a news article that directly CONTRADICTS the claim.
+                2. **FALLBACK:** If and only if you CANNOT find a specific debunking article for a claim, find a URL from a highly authoritative institution (e.g., CDC, WHO, a major university's research page) that provides general, factual information on the underlying topic (e.g., teen mental health).
+                3. Your entire response MUST be a single, valid JSON array of objects. Do not include any text, explanations, or markdown before or after the JSON array.
 
-ARTICLE EXCERPT:
-{article_excerpt}
+                **JSON Object Schema:**
+                ```json
+                {json_schema}
+                ```
 
-CLAIMS TO VERIFY:
-{claims_text}
+                Begin your JSON response now.
+                """
+            else:  # Assumes REAL or UNKNOWN
+                # Goal: Find corroborating primary evidence in a JSON format
+                prompt = f"""You are a data extraction specialist for a research institution. Your task is to find primary sources that CORROBORATE the claims from a REAL article and return the findings as a JSON array.
 
-EXAMPLES OF EXCELLENT VERIFICATION SOURCES:
+                **Article Content:**
+                {article_excerpt}
 
-Example 1:
-**CLAIM**: "FDA approved Pfizer COVID-19 vaccine for adults in August 2021"
-**INSTITUTION**: U.S. Food and Drug Administration
-**SPECIFIC_URL**: https://www.fda.gov/news-events/press-announcements/fda-approves-first-covid-19-vaccine
-**VERIFICATION_TYPE**: official_data
-**SEARCH_STRATEGY**: "Pfizer COVID-19 vaccine approval" site:fda.gov
-**CONFIDENCE**: 0.95
+                **Claims to Verify:**
+                {claims_text}
 
-Example 2:
-**CLAIM**: "Harvard study shows 40% reduction in cardiovascular events"
-**INSTITUTION**: Harvard T.H. Chan School of Public Health
-**SPECIFIC_URL**: https://www.hsph.harvard.edu/news/press-releases/2023/cardiovascular-study-results/
-**VERIFICATION_TYPE**: research_study
-**SEARCH_STRATEGY**: "cardiovascular reduction study" site:hsph.harvard.edu
-**CONFIDENCE**: 0.85
+                **Instructions:**
+                1. For each claim, find the specific URL to the original study, official press release, or direct report from the institution mentioned.
+                2. Your entire response MUST be a single, valid JSON array containing one object for each source you find.
+                3. Do NOT include any text, explanations, or markdown before or after the JSON array. Your response should start with `[` and end with `]`.
 
-Now provide exactly 5 verification sources using this EXACT format:
+                **JSON Object Schema:**
+                ```json
+                {json_schema}
+                ```
 
-## VERIFICATION SOURCE 1
-**CLAIM**: "Exact quote from article being verified"
-**INSTITUTION**: Name of most authoritative organization for this claim type
-**SPECIFIC_URL**: https://domain.org/exact-path/to/relevant-content
-**VERIFICATION_TYPE**: primary_source|expert_analysis|official_data|research_study
-**SEARCH_STRATEGY**: "specific keywords" site:domain.org
-**CONFIDENCE**: 0.X (decimal from 0.1 to 1.0)
+                Begin your JSON response now.
+                """
 
-## VERIFICATION SOURCE 2
-[Continue same format for all 5 sources...]
-
-CRITICAL REQUIREMENTS:
-1. URLs must be SPECIFIC pages, never homepages (❌ https://cdc.gov ✅ https://cdc.gov/vaccines/covid-19/clinical-considerations/managing-anaphylaxis.html)
-2. Each institution must be the MOST AUTHORITATIVE source for that specific claim type
-3. Confidence scores must reflect realistic likelihood of finding the information at that exact URL
-4. Search strategies must be specific enough to find the exact information needed
-5. Verification types must match the nature of the evidence being sought
-
-Generate exactly 5 sources now:"""
-
-            logger.info(f"Generated verification sources prompt", 
-                       extra={
-                           'session_id': session_id,
-                           'article_length': len(article_text),
-                           'claims_count': len(formatted_claims),
-                           'prompt_length': len(prompt)
-                       })
+            logger.info(f"Generated JSON-enforced verification sources prompt for prediction: {prediction_upper}",
+                       extra={'session_id': session_id, 'prompt_length': len(prompt)})
             
             return prompt
             
@@ -177,6 +139,7 @@ Generate exactly 5 sources now:"""
     @staticmethod
     def generate_verification_sources_fallback(article_text: str, 
                                              claims: List[Dict[str, Any]], 
+                                             prediction: str = 'UNKNOWN',
                                              session_id: str = None) -> str:
         """
         Fallback prompt for verification sources when main prompt fails.
@@ -199,8 +162,28 @@ Generate exactly 5 sources now:"""
                     claims_text = "\n".join(valid_claims)
             
             article_excerpt = str(article_text)[:800] if article_text else "No article provided"
+            prediction_upper = prediction.upper() if prediction else 'UNKNOWN'
             
-            return f"""Generate 3 verification sources for fact-checking the following content.
+            # Prediction-aware fallback prompt
+            if prediction_upper == 'FAKE':
+                return f"""Generate 3 debunking sources for fact-checking potentially FAKE content.
+
+CONTENT: {article_excerpt}
+
+CLAIMS: 
+{claims_text}
+
+For each claim, find sources that DEBUNK or REFUTE the claim:
+1. Institution: Fact-checking organization or news outlet
+2. URL: Specific debunking article URL (not homepage)
+3. Confidence: 0.1 to 1.0
+
+Format each as:
+Source 1: [Institution] - [URL] - Confidence: [0.X] (Debunks claim)
+Source 2: [Institution] - [URL] - Confidence: [0.X] (Debunks claim)
+Source 3: [Institution] - [URL] - Confidence: [0.X] (Debunks claim)"""
+            else:  # REAL or UNKNOWN
+                return f"""Generate 3 verification sources for fact-checking the following content.
 
 CONTENT: {article_excerpt}
 
@@ -1100,11 +1083,24 @@ if __name__ == "__main__":
             'verification_sources',
             article_text=test_article,
             claims=test_claims,
+            prediction='REAL',
             session_id=test_session_id
         )
         
         print(f"✅ Generated verification sources prompt ({len(prompt)} characters)")
         print(f"Preview: {prompt[:200]}...")
+        
+        # Test FAKE prediction case
+        print("\n=== TESTING FAKE PREDICTION ===")
+        fake_prompt = get_prompt_template(
+            'verification_sources',
+            article_text=test_article,
+            claims=test_claims,
+            prediction='FAKE',
+            session_id=test_session_id
+        )
+        print(f"✅ Generated FAKE verification sources prompt ({len(fake_prompt)} characters)")
+        print(f"Preview: {fake_prompt[:200]}...")
         
     except Exception as e:
         print(f"❌ Verification sources prompt test failed: {str(e)}")
