@@ -759,17 +759,19 @@ async def analyze_article_endpoint(request: ArticleRequest, http_request: Reques
                 str(request.url)
             )
             
-            if not scrape_result['success']:
+            # Use dot notation to access attributes
+            if not scrape_result.success:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Failed to scrape URL: {scrape_result.get('error', 'Unknown error')}"
+                    detail=f"Failed to scrape URL: {scrape_result.error or 'Unknown error'}"
                 )
             
-            article_text = scrape_result['text']
-            article_title = scrape_result['title']
+            # Use dot notation here as well
+            article_text = scrape_result.text
+            article_title = scrape_result.title
             article_url = str(request.url)
             scraping_info = {
-                "scraping_method": scrape_result.get('method', 'unknown'),
+                "scraping_method": getattr(scrape_result, 'method', 'unknown'),
                 "scraped_title": article_title,
                 "original_url": str(request.url),
                 "scraping_successful": True
@@ -792,14 +794,16 @@ async def analyze_article_endpoint(request: ArticleRequest, http_request: Reques
                     request.text
                 )
                 
-                if not scrape_result['success']:
+                # Use dot notation to access attributes
+                if not scrape_result.success:
                     raise HTTPException(
                         status_code=400,
-                        detail=f"Failed to scrape URL: {scrape_result.get('error', 'Unknown error')}"
+                        detail=f"Failed to scrape URL: {scrape_result.error or 'Unknown error'}"
                     )
                 
-                article_text = scrape_result['text']
-                article_title = scrape_result['title']
+                # Use dot notation here as well
+                article_text = scrape_result.text
+                article_title = scrape_result.title
                 article_url = request.text
                 scraping_info = {"auto_detected_url": True, "scraping_successful": True}
             else:
